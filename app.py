@@ -29,7 +29,7 @@ from fastapi.templating import Jinja2Templates
 import bank
 import camera
 
-VERSION = "v9"
+VERSION = "v10"
 
 # Night window (local time). Night spans NIGHT_START..midnight..NIGHT_END.
 NIGHT_START = int(os.environ.get("NIGHT_START", "20"))
@@ -49,14 +49,14 @@ VOICE_DIR = os.path.join("data", "voices")
 # The three doors. Key is the locked path value AND the bank category.
 DOORS = {
     "rec": {
-        "button": "Give a recommendation",
+        "button": "Recommendation",
         "heading": "Recommendation",
         "tagline": "Who's got it better than us?",
         "kept": "You recommended this.",
         "gift_lede": "Someone stood where you're standing and recommended this.",
     },
     "memory": {
-        "button": "Share a memory",
+        "button": "Memory",
         "heading": "Memory",
         "tagline": "I offer you the memory of a yellow rose seen at sunset "
                    "long before you were born",
@@ -64,7 +64,7 @@ DOORS = {
         "gift_lede": "Someone stood where you're standing and left this behind.",
     },
     "fear": {
-        "button": "Tell us your fears",
+        "button": "Fear",
         "heading": "Fear",
         "tagline": "It's okay to be existential sometimes",
         "kept": "You set this down.",
