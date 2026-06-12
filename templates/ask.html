@@ -5,9 +5,18 @@
 {% if asked %}
 <p>Your question is in the window's hands. It may get answered. It may just
 be kept.</p>
+{% if has_photo %}
+<figure class="full">
+  <img src="/photo?final=1" alt="your photo on the spot">
+</figure>
+<form method="get" action="/download">
+  <button type="submit">Get out — download your photo</button>
+</form>
+{% else %}
 <form method="get" action="/getout">
   <button type="submit">Get Out!</button>
 </form>
+{% endif %}
 {% else %}
 <form method="post" action="/api/ask">
   <textarea name="body" maxlength="500" rows="5"
