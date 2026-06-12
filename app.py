@@ -29,7 +29,7 @@ from fastapi.templating import Jinja2Templates
 import bank
 import camera
 
-VERSION = "v10"
+VERSION = "v11"
 
 # Night window (local time). Night spans NIGHT_START..midnight..NIGHT_END.
 NIGHT_START = int(os.environ.get("NIGHT_START", "20"))
