@@ -334,6 +334,25 @@ def test_one_question_per_session():
     assert q["body"] == "Will the light hold?"
 
 
+def test_ask_terminal_sets_done_and_offers_restart():
+    # Finishing via the Ask door must not trap you: the page becomes terminal
+    # (state done) and offers a restart link.
+    orig = appmod.is_night
+    try:
+        appmod.is_night = lambda: True
+        c = client()
+        to_gifted(c, "memory")
+        c.post("/api/ask", data={"body": "q"}, follow_redirects=False)
+        sid = c.cookies.get("nightspot")
+        page = c.get("/ask").text
+        assert 'href="/"' in page  # an "Again?" restart link
+        assert bank.get_session(sid)["state"] == "done"
+        r = c.get("/", follow_redirects=False)
+        assert r.headers["location"] == "/capture"  # restarts, not trapped
+    finally:
+        appmod.is_night = orig
+
+
 def test_photo_download_attachment_disposition():
     c = client()
     to_gifted(c, "memory")

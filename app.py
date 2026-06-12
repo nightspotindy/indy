@@ -29,7 +29,7 @@ from fastapi.templating import Jinja2Templates
 import bank
 import camera
 
-VERSION = "v7"
+VERSION = "v8"
 
 # Night window (local time). Night spans NIGHT_START..midnight..NIGHT_END.
 NIGHT_START = int(os.environ.get("NIGHT_START", "20"))
@@ -377,6 +377,10 @@ def ask_page(request: Request):
     if s["state"] not in ("gifted", "done"):
         return redirect_to_state(s["state"])
     asked = bank.get_question(s["id"]) is not None
+    if asked and s["state"] != "done":
+        # The question was the last act: this is now a terminal page, so a
+        # reload of / restarts cleanly instead of trapping here.
+        bank.update_session(s["id"], state="done")
     has_photo = latest_take_path(s["id"], s["takes"]) is not None
     return templates.TemplateResponse(
         "ask.html", ctx(request, asked=asked, has_photo=has_photo))
