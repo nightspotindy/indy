@@ -1,0 +1,176 @@
+/* nightspot — brutalist. Courier New, black on white, one accent: #ff6a00.
+   No gradients, no shadows, no other colors. */
+
+:root {
+  --ink: #000;
+  --paper: #fff;
+  --accent: #ff6a00;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Courier New", Courier, monospace;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+::selection { background: var(--accent); color: var(--paper); }
+
+body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+main {
+  width: 100%;
+  max-width: 28rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 2rem;
+  flex: 1 0 auto;
+}
+
+footer {
+  width: 100%;
+  max-width: 28rem;
+  margin: 0 auto;
+  padding: 1rem 1.25rem 1.5rem;
+  border-top: 1px solid var(--ink);
+  flex-shrink: 0;
+}
+
+footer p { margin: 0; font-size: 0.85rem; }
+
+h1 {
+  font-size: 1.6rem;
+  font-weight: bold;
+  letter-spacing: 0.02em;
+  margin: 0 0 0.75rem;
+}
+
+p { margin: 0 0 1rem; }
+
+a { color: var(--ink); text-decoration: underline; }
+a:hover, a:focus, a:active { color: var(--accent); }
+
+/* Buttons & button-styled links */
+button,
+.button {
+  display: inline-block;
+  width: 100%;
+  margin: 0 0 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  font-family: inherit;
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+button:hover, button:focus, button:active,
+.button:hover, .button:focus, .button:active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 1;
+  color: #777;
+  border-color: #777;
+}
+
+/* Forms */
+textarea, input[type="text"] {
+  width: 100%;
+  margin: 0 0 1rem;
+  padding: 0.75rem;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  font-family: inherit;
+  font-size: 1rem;
+  resize: vertical;
+}
+
+textarea:focus { outline: 1px solid var(--accent); }
+
+/* Images */
+figure { margin: 0 0 1rem; }
+figure img {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--ink);
+}
+figure.full img { border: 1px solid var(--ink); }
+figcaption {
+  margin-top: 0.35rem;
+  font-size: 0.8rem;
+  text-transform: lowercase;
+  letter-spacing: 0.05em;
+}
+
+/* Countdown */
+.count {
+  font-size: 4rem;
+  text-align: center;
+  min-height: 4.5rem;
+  line-height: 4.5rem;
+}
+
+.blink { border: 1px solid var(--ink); padding: 1rem; margin-bottom: 1rem; }
+
+/* Text / Voice toggle */
+.toggle { display: flex; gap: 0; margin-bottom: 1rem; }
+.tab {
+  width: auto;
+  flex: 1;
+  margin: 0;
+  border-bottom: 1px solid var(--ink);
+  background: var(--paper);
+}
+.tab.active {
+  border-bottom: 3px solid var(--accent);
+  color: var(--ink);
+}
+.tab.active:hover { color: var(--accent); }
+
+/* Voice UI */
+.voice-ui { border: 1px solid var(--ink); padding: 1rem; margin-bottom: 1rem; }
+audio { width: 100%; margin: 0.5rem 0; }
+
+.dot {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  border: 1px solid var(--ink);
+  border-radius: 50%;
+  vertical-align: middle;
+}
+.dot.live { background: var(--accent); border-color: var(--accent); }
+
+/* Gift blockquote */
+blockquote {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border-left: 3px solid var(--accent);
+  border-top: 1px solid var(--ink);
+  border-right: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+  font-style: normal;
+}
+
+/* Exit menu */
+.exits { display: block; }
+
+.escape { font-size: 0.85rem; }

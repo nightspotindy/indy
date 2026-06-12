@@ -1,0 +1,302 @@
+"""End-to-end tests for nightspot, using FastAPI's TestClient with
+MOCK_CAMERA=1. Runnable two ways:
+
+    MOCK_CAMERA=1 python3 -m pytest test_app.py -q
+    MOCK_CAMERA=1 python3 test_app.py
+
+Proves: every page bounces when visited out of order; the sad->retake loop
+with take numbering and the MAX_TAKES ceiling; door lock-in; double deposit
+refused; double shutter-fire refused with clean JSON; same-category gifting
+with fallback and a refresh-stable gift; voice privacy; one question per
+session; and the attachment disposition on the photo download.
+"""
+import os
+import tempfile
+
+# Must be set before importing camera/app so the mock path is taken and the
+# retake ceiling is small enough to exercise quickly.
+os.environ["MOCK_CAMERA"] = "1"
+os.environ.setdefault("MAX_TAKES", "3")
+
+import bank  # noqa: E402
+import camera  # noqa: E402
+import app as appmod  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+
+# Redirect every filesystem + DB path into a throwaway temp dir.
+_TMP = tempfile.mkdtemp(prefix="nightspot-test-")
+bank.DB_PATH = os.path.join(_TMP, "nightspot.db")
+camera.CAPTURE_DIR = os.path.join(_TMP, "captures")
+appmod.CAPTURE_DIR = camera.CAPTURE_DIR
+appmod.VOICE_DIR = os.path.join(_TMP, "voices")
+MAX_TAKES = appmod.MAX_TAKES
+
+# TestClient only fires startup events when used as a context manager, and we
+# create bare clients per test — so set up dirs and the schema ourselves.
+os.makedirs(camera.CAPTURE_DIR, exist_ok=True)
+os.makedirs(appmod.VOICE_DIR, exist_ok=True)
+bank.init()
+
+app = appmod.app
+
+
+def client():
+    return TestClient(app)
+
+
+# --- flow helpers -----------------------------------------------------------
+
+def begin(c):
+    r = c.post("/start", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/capture"
+
+
+def shoot(c):
+    r = c.post("/api/shoot")
+    assert r.status_code == 200
+    j = r.json()
+    assert j["ok"] is True
+    return j
+
+
+def to_review(c):
+    begin(c)
+    shoot(c)
+
+
+def to_path(c, door="memory"):
+    to_review(c)
+    r = c.post("/review", data={"feeling": "happy"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/path"
+
+
+def to_deposit_page(c, door="memory"):
+    to_path(c)
+    r = c.post("/path", data={"door": door}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/rec"
+
+
+def deposit_text(c, door="memory", body="a small true thing"):
+    to_deposit_page(c, door)
+    r = c.post("/api/deposit", data={"mode": "text", "body": body},
+               follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/gift"
+
+
+def to_gifted(c, door="memory", body="a small true thing"):
+    deposit_text(c, door, body)
+    c.get("/gift")  # assigns the gift
+    r = c.post("/carry", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/exit"
+
+
+# --- tests ------------------------------------------------------------------
+
+def test_no_session_bounces_to_landing():
+    c = client()
+    for path in ["/capture", "/review", "/path", "/rec", "/gift", "/exit",
+                 "/ask", "/getout", "/download"]:
+        r = c.get(path, follow_redirects=False)
+        assert r.status_code == 303, path
+        assert r.headers["location"] == "/", path
+
+
+def test_out_of_order_forward_pages_bounce_back_to_capture():
+    c = client()
+    begin(c)  # state = capture
+    for path in ["/review", "/path", "/rec", "/gift", "/exit", "/ask",
+                 "/getout"]:
+        r = c.get(path, follow_redirects=False)
+        assert r.status_code == 303, path
+        assert r.headers["location"] == "/capture", (path, r.headers["location"])
+
+
+def test_out_of_order_backward_page_bounces_forward():
+    c = client()
+    to_path(c)  # state = path
+    # Visiting an earlier page redirects forward to where we actually are.
+    r = c.get("/capture", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/path"
+    r = c.get("/review", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/path"
+
+
+def test_sad_retake_loop_numbering_and_ceiling():
+    c = client()
+    begin(c)
+    # Take 1 heading.
+    assert "Stand on the spot" in c.get("/capture").text
+    for take in range(1, MAX_TAKES + 1):
+        shoot(c)
+        rev = c.get("/review")
+        assert "Take {}".format(take) in rev.text
+        if take < MAX_TAKES:
+            # Sad is still offered; go again.
+            assert 'value="sad"' in rev.text
+            r = c.post("/review", data={"feeling": "sad"},
+                       follow_redirects=False)
+            assert r.headers["location"] == "/capture"
+            cap = c.get("/capture")
+            assert "Again. Take {}".format(take + 1) in cap.text
+        else:
+            # At the ceiling: Sad button is gone, footer changes.
+            assert 'value="sad"' not in rev.text
+            assert "The light has spoken" in rev.text
+            # Even if forced, a sad POST is refused (stays on review).
+            r = c.post("/review", data={"feeling": "sad"},
+                       follow_redirects=False)
+            assert r.headers["location"] == "/review"
+
+
+def test_door_lock_in():
+    c = client()
+    to_path(c)
+    r = c.post("/path", data={"door": "memory"}, follow_redirects=False)
+    assert r.headers["location"] == "/rec"
+    sid = c.cookies.get("nightspot")
+    # Revisiting /path bounces forward to /rec.
+    r = c.get("/path", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/rec"
+    # Switching the door is refused; the lock holds.
+    r = c.post("/path", data={"door": "fear"}, follow_redirects=False)
+    assert r.headers["location"] == "/rec"
+    assert bank.get_session(sid)["path"] == "memory"
+
+
+def test_double_deposit_refused():
+    c = client()
+    deposit_text(c, "memory", "first and only")
+    sid = c.cookies.get("nightspot")
+    before = bank.get_session(sid)["deposit_id"]
+    # Second deposit attempt bounces to /gift and changes nothing.
+    r = c.post("/api/deposit", data={"mode": "text", "body": "sneaky second"},
+               follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/gift"
+    assert bank.get_session(sid)["deposit_id"] == before
+
+
+def test_double_shutter_refused_clean_json():
+    c = client()
+    to_review(c)  # one shot fired, state = review
+    r = c.post("/api/shoot")
+    assert r.status_code == 409
+    j = r.json()  # clean JSON, not an HTML 500
+    assert j["ok"] is False
+    assert "error" in j
+
+
+def test_same_category_gifting_and_refresh_stable():
+    # Two memory depositors: the second should receive the first's memory
+    # (least-circulated, never their own), and the gift must not move on
+    # refresh.
+    a = client()
+    deposit_text(a, "memory", "A's memory")
+    a.get("/gift")  # A is gifted the seed rose
+
+    b = client()
+    deposit_text(b, "memory", "B's memory")
+    sid_b = b.cookies.get("nightspot")
+    g1 = b.get("/gift")
+    assert "Someone stood where you" in g1.text  # lede; apostrophe is escaped
+    gift_id = bank.get_session(sid_b)["gift_id"]
+    gift = bank.get_memory(gift_id)
+    assert gift["category"] == "memory"
+    assert gift["session_id"] != sid_b  # never their own
+    # Refresh: same gift.
+    b.get("/gift")
+    assert bank.get_session(sid_b)["gift_id"] == gift_id
+
+
+def test_gifting_falls_back_across_categories():
+    # A fear depositor with no other fear in the bank falls back to any
+    # category rather than being gifted their own.
+    c = client()
+    deposit_text(c, "fear", "the only fear so far")
+    sid = c.cookies.get("nightspot")
+    c.get("/gift")
+    gift_id = bank.get_session(sid)["gift_id"]
+    assert gift_id is not None
+    gift = bank.get_memory(gift_id)
+    assert gift["session_id"] != sid  # fell back to someone else's
+
+
+def test_voice_privacy():
+    # Make a voice deposit and grab its id straight from the bank.
+    c = client()
+    to_deposit_page(c, "memory")
+    files = {"audio": ("d.webm", b"FAKEWEBMBYTES", "audio/webm")}
+    r = c.post("/api/deposit", data={"mode": "voice"}, files=files,
+               follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/gift"
+    sid = c.cookies.get("nightspot")
+    voice_id = bank.get_session(sid)["deposit_id"]
+    assert bank.get_memory(voice_id)["kind"] == "voice"
+
+    # A different session, NOT gifted this voice, is turned away.
+    other = client()
+    to_gifted(other, "memory")
+    r = other.get("/voice/{}".format(voice_id), follow_redirects=False)
+    assert r.status_code in (302, 303, 403)
+    assert r.status_code != 200
+
+    # The session it IS gifted to can play it back.
+    giftee = client()
+    to_deposit_page(giftee, "memory")
+    giftee.post("/api/deposit", data={"mode": "text", "body": "x"},
+                follow_redirects=False)
+    gsid = giftee.cookies.get("nightspot")
+    bank.update_session(gsid, gift_id=voice_id)
+    r = giftee.get("/voice/{}".format(voice_id))
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "audio/webm"
+
+
+def test_one_question_per_session():
+    c = client()
+    to_gifted(c, "memory")
+    sid = c.cookies.get("nightspot")
+    r = c.post("/api/ask", data={"body": "Will the light hold?"},
+               follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/ask"
+    assert "in the window's hands" in c.get("/ask").text
+    # Second question is silently refused by the UNIQUE constraint.
+    c.post("/api/ask", data={"body": "And a second one?"},
+           follow_redirects=False)
+    q = bank.get_question(sid)
+    assert q["body"] == "Will the light hold?"
+
+
+def test_photo_download_attachment_disposition():
+    c = client()
+    to_gifted(c, "memory")
+    c.get("/getout")  # advances to done, confirms a photo exists
+    r = c.get("/download", follow_redirects=False)
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/jpeg"
+    cd = r.headers.get("content-disposition", "")
+    assert "attachment" in cd
+    assert "its-better-at-night.jpg" in cd
+
+
+# --- standalone runner ------------------------------------------------------
+
+def _run_all():
+    tests = [v for k, v in sorted(globals().items())
+             if k.startswith("test_") and callable(v)]
+    failures = 0
+    for t in tests:
+        try:
+            t()
+            print("PASS {}".format(t.__name__))
+        except Exception as e:  # noqa: BLE001
+            failures += 1
+            import traceback
+            print("FAIL {}: {}".format(t.__name__, e))
+            traceback.print_exc()
+    print("\n{} passed, {} failed".format(len(tests) - failures, failures))
+    return failures
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(1 if _run_all() else 0)

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Take {{ take_n }}</h1>
+
+<figure>
+  <img src="/photo?t={{ take_n }}" alt="the photo just taken">
+  <figcaption>just now, on the spot</figcaption>
+</figure>
+
+<form method="post" action="/review">
+  <button type="submit" name="feeling" value="happy">Happy?</button>
+  {% if not at_cap %}
+  <button type="submit" name="feeling" value="sad">Sad?</button>
+  {% endif %}
+</form>
+{% endblock %}
+
+{% block footer %}
+{% if at_cap %}
+<p>That's the one. The light has spoken.</p>
+{% else %}
+<p>It's better at night.</p>
+{% endif %}
+{% endblock %}

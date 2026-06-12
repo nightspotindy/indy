@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Yours now.</h1>
+
+{% if gift %}
+<p>{{ lede }}</p>
+
+{% if gift.kind == "voice" %}
+<audio controls src="/voice/{{ gift.id }}"></audio>
+{% else %}
+<blockquote>{{ gift.body }}</blockquote>
+{% endif %}
+
+<form method="post" action="/carry">
+  <button type="submit">Carry it</button>
+</form>
+{% else %}
+<p>The bank is empty for now. Come back; someone will have left something.</p>
+<form method="post" action="/carry">
+  <button type="submit">Carry on</button>
+</form>
+{% endif %}
+{% endblock %}

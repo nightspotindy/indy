@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>One question. For the window.</h1>
+
+{% if asked %}
+<p>Your question is in the window's hands. It may get answered. It may just
+be kept.</p>
+<form method="get" action="/getout">
+  <button type="submit">Get Out!</button>
+</form>
+{% else %}
+<form method="post" action="/api/ask">
+  <textarea name="body" maxlength="500" rows="5"
+            placeholder="Up to 500 characters."></textarea>
+  <button type="submit">Send it</button>
+</form>
+<p class="escape"><a href="/getout">Never mind — my photo</a></p>
+{% endif %}
+{% endblock %}
+
+{% block footer %}<p>It's better at night.</p>{% endblock %}

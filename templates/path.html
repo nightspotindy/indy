@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Three doors</h1>
+<p>Pick one. It locks behind you.</p>
+
+<form method="post" action="/path">
+  {% for key, door in doors.items() %}
+  <button type="submit" name="door" value="{{ key }}">{{ door.button }}</button>
+  {% endfor %}
+</form>
+{% endblock %}

@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Get out.</h1>
+
+{% if has_photo %}
+<figure class="full">
+  <img src="/photo?final=1" alt="your photo on the spot">
+</figure>
+<form method="get" action="/download">
+  <button type="submit">Download your photo</button>
+</form>
+{% else %}
+<p>No photo was kept. That happens.</p>
+{% endif %}
+{% endblock %}
+
+{% block footer %}<p>It's better at night.</p>{% endblock %}

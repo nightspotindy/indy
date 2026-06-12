@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>{{ door.heading }}</h1>
+<p>{{ door.prompt }}</p>
+
+<div class="toggle">
+  <button type="button" id="tab-text" class="tab active"
+          onclick="pick('text')">Text</button>
+  <button type="button" id="tab-voice" class="tab"
+          onclick="pick('voice')">Voice</button>
+</div>
+
+<!-- TEXT -->
+<form id="form-text" method="post" action="/api/deposit">
+  <input type="hidden" name="mode" value="text">
+  <textarea name="body" maxlength="2000" rows="8"
+            placeholder="Up to 2000 characters."></textarea>
+  <button type="submit">Send it</button>
+</form>
+
+<!-- VOICE -->
+<form id="form-voice" method="post" action="/api/deposit"
+      enctype="multipart/form-data" style="display:none">
+  <input type="hidden" name="mode" value="voice">
+  <input type="hidden" id="audio-input" name="audio">
+  <div class="voice-ui">
+    <p id="voice-status">Up to 60 seconds.</p>
+    <button type="button" id="rec-btn" onclick="toggleRec()">
+      <span class="dot" id="rec-dot"></span> Record
+    </button>
+    <audio id="playback" controls style="display:none"></audio>
+    <button type="button" id="redo-btn" onclick="resetRec()"
+            style="display:none">Re-record</button>
+  </div>
+  <button type="submit" id="voice-send" disabled>Send it</button>
+</form>
+{% endblock %}
+
+{% block footer %}<p>{{ door.tagline }}</p>{% endblock %}
+
+{% block script %}
+<script>
+  function pick(which) {
+    var t = which === 'text';
+    document.getElementById('form-text').style.display = t ? 'block' : 'none';
+    document.getElementById('form-voice').style.display = t ? 'none' : 'block';
+    document.getElementById('tab-text').classList.toggle('active', t);
+    document.getElementById('tab-voice').classList.toggle('active', !t);
+  }
+
+  var mediaRecorder = null, chunks = [], recording = false, capTimer = null;
+  var recordedBlob = null;
+
+  function toggleRec() {
+    if (recording) { stopRec(); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      document.getElementById('voice-status').textContent =
+        'No microphone available here.';
+      return;
+    }
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+      chunks = [];
+      mediaRecorder = new MediaRecorder(stream);
+      mediaRecorder.ondataavailable = function (e) {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+      mediaRecorder.onstop = function () {
+        recordedBlob = new Blob(chunks, { type: 'audio/webm' });
+        var url = URL.createObjectURL(recordedBlob);
+        var pb = document.getElementById('playback');
+        pb.src = url;
+        pb.style.display = 'block';
+        document.getElementById('redo-btn').style.display = 'inline-block';
+        document.getElementById('voice-send').disabled = false;
+        attachBlob();
+        stream.getTracks().forEach(function (t) { t.stop(); });
+      };
+      mediaRecorder.start();
+      recording = true;
+      document.getElementById('rec-dot').classList.add('live');
+      document.getElementById('rec-btn').childNodes[2].textContent = ' Stop';
+      document.getElementById('voice-status').textContent = 'Recording…';
+      // 60s hard cap.
+      capTimer = setTimeout(stopRec, 60000);
+    }).catch(function () {
+      document.getElementById('voice-status').textContent =
+        'Microphone permission denied.';
+    });
+  }
+
+  function stopRec() {
+    if (!recording) return;
+    if (capTimer) { clearTimeout(capTimer); capTimer = null; }
+    recording = false;
+    document.getElementById('rec-dot').classList.remove('live');
+    document.getElementById('rec-btn').childNodes[2].textContent = ' Record';
+    document.getElementById('voice-status').textContent = 'Listen back, or re-record.';
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+  }
+
+  function resetRec() {
+    recordedBlob = null;
+    var pb = document.getElementById('playback');
+    pb.src = '';
+    pb.style.display = 'none';
+    document.getElementById('redo-btn').style.display = 'none';
+    document.getElementById('voice-send').disabled = true;
+    document.getElementById('voice-status').textContent = 'Up to 60 seconds.';
+  }
+
+  // MediaRecorder gives a Blob; ship it through the form as a real file.
+  function attachBlob() {
+    var form = document.getElementById('form-voice');
+    form.onsubmit = function (e) {
+      if (!recordedBlob) return true;
+      e.preventDefault();
+      var fd = new FormData();
+      fd.append('mode', 'voice');
+      fd.append('audio', recordedBlob, 'deposit.webm');
+      fetch('/api/deposit', { method: 'POST', body: fd, redirect: 'follow' })
+        .then(function () { window.location = '/gift'; })
+        .catch(function () {
+          document.getElementById('voice-status').textContent =
+            'Could not send. Try again.';
+        });
+      return false;
+    };
+  }
+</script>
+{% endblock %}

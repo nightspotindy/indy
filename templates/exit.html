@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Three ways out</h1>
+
+<nav class="exits">
+  <a class="button" href="/ask">Ask?</a>
+  <a class="button" href="/getout">Get Out!</a>
+  {# A third "Give / tip" door is shelved. To restore it, uncomment: #}
+  {# <a class="button" href="{{ tip_url }}">Give?</a> #}
+</nav>
+{% endblock %}
+
+{% block footer %}<p>It's better at night.</p>{% endblock %}

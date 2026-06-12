@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block body %}
+{% if is_night %}
+  <h1>Start</h1>
+  <p>You're standing in the right place.</p>
+{% else %}
+  <h1>It's Better at Night</h1>
+  <p>Come back after dark. Or don't listen to a sign.</p>
+{% endif %}
+
+<figure>
+  <img id="preview" src="/preview.jpg" alt="the spot, right now"
+       onerror="this.style.display='none'">
+  <figcaption>the spot, right now</figcaption>
+</figure>
+
+<form method="post" action="/start">
+  <button type="submit">Start</button>
+</form>
+{% endblock %}
+
+{% block footer %}<p>It's better at night. &middot; {{ version }}</p>{% endblock %}
+
+{% block script %}
+<script>
+  function refresh() {
+    var img = document.getElementById('preview');
+    if (!img) return;
+    img.src = '/preview.jpg?t=' + Date.now();
+  }
+  setInterval(refresh, 3000);
+</script>
+{% endblock %}

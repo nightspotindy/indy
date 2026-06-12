@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>{{ heading }}</h1>
+
+<figure>
+  <img id="preview" src="/preview.jpg" alt="the spot, right now"
+       onerror="this.style.display='none'">
+  <figcaption>the spot, right now</figcaption>
+</figure>
+
+<div id="count" class="count"></div>
+
+<div id="blink" class="blink" style="display:none">
+  <p>The camera blinked. Carry on or try again.</p>
+  <p><a href="/review">carry on</a> &middot; <a href="/capture">try again</a></p>
+</div>
+
+<form onsubmit="return false">
+  <button type="button" id="go" onclick="begin()">Shoot</button>
+</form>
+{% endblock %}
+
+{% block footer %}<p>It's better at night.</p>{% endblock %}
+
+{% block script %}
+<script>
+  // If the page was restored from the back-forward cache, reload it so the
+  // flow can never resume mid-countdown from a stale snapshot.
+  window.addEventListener('pageshow', function (e) {
+    if (e.persisted) { window.location.reload(); }
+  });
+
+  var firing = false;  // unloopable: one countdown, one shot, ever.
+
+  function refresh() {
+    var img = document.getElementById('preview');
+    if (!img) return;
+    img.src = '/preview.jpg?t=' + Date.now();
+  }
+  setInterval(refresh, 1000);
+
+  function begin() {
+    if (firing) return;
+    firing = true;
+    document.getElementById('go').style.display = 'none';
+    var n = 3;
+    var el = document.getElementById('count');
+    el.textContent = n;
+    var timer = setInterval(function () {
+      n -= 1;
+      if (n <= 0) {
+        clearInterval(timer);
+        el.textContent = '—';
+        shoot();
+      } else {
+        el.textContent = n;
+      }
+    }, 1000);
+  }
+
+  function shoot() {
+    fetch('/api/shoot', { method: 'POST' })
+      .then(function (r) {
+        return r.json().then(function (j) { return { ok: r.ok, j: j }; });
+      })
+      .then(function (res) {
+        if (!res.ok || !res.j || res.j.ok !== true) { throw new Error('blink'); }
+        window.location = '/review';
+      })
+      .catch(function () { blink(); });
+  }
+
+  function blink() {
+    document.getElementById('count').style.display = 'none';
+    document.getElementById('blink').style.display = 'block';
+  }
+</script>
+{% endblock %}
