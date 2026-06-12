@@ -1,15 +1,13 @@
 {% extends "base.html" %}
 {% block body %}
-<h1>Yours now.</h1>
-
 {% if gift %}
-<p>{{ lede }}</p>
+<h1>{{ heading }}</h1>
+<p>{{ kept }}</p>
 
-{% if gift.photo %}
 <figure class="full">
-  <img src="/gift-photo/{{ gift.id }}" alt="where they stood">
+  <img src="/photo?final=1" alt="you, on the spot"
+       onerror="this.style.display='none'">
 </figure>
-{% endif %}
 
 {% if gift.kind == "voice" %}
 <audio controls src="/voice/{{ gift.id }}"></audio>
@@ -21,7 +19,8 @@
   <button type="submit">Carry it</button>
 </form>
 {% else %}
-<p>The bank is empty for now. Come back; someone will have left something.</p>
+<h1>Yours now.</h1>
+<p>Nothing was set down. That happens.</p>
 <form method="post" action="/carry">
   <button type="submit">Carry on</button>
 </form>

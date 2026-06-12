@@ -12,6 +12,7 @@ session; and the attachment disposition on the photo download.
 """
 import os
 import tempfile
+import uuid
 
 # Must be set before importing camera/app so the mock path is taken and the
 # retake ceiling is small enough to exercise quickly.
@@ -229,39 +230,32 @@ def test_double_shutter_refused_clean_json():
     assert "error" in j
 
 
-def test_same_category_gifting_and_refresh_stable():
-    # Two memory depositors: the second should receive the first's memory
-    # (least-circulated, never their own), and the gift must not move on
-    # refresh.
-    a = client()
-    deposit_text(a, "memory", "A's memory")
-    a.get("/gift")  # A is gifted the seed rose
-
-    b = client()
-    deposit_text(b, "memory", "B's memory")
-    sid_b = b.cookies.get("nightspot")
-    g1 = b.get("/gift")
-    assert "Someone stood where you" in g1.text  # lede; apostrophe is escaped
-    gift_id = bank.get_session(sid_b)["gift_id"]
-    gift = bank.get_memory(gift_id)
-    assert gift["category"] == "memory"
-    assert gift["session_id"] != sid_b  # never their own
-    # Refresh: same gift.
-    b.get("/gift")
-    assert bank.get_session(sid_b)["gift_id"] == gift_id
-
-
-def test_gifting_falls_back_across_categories():
-    # A fear depositor with no other fear in the bank falls back to any
-    # category rather than being gifted their own.
+def test_gift_confirms_your_own_deposit():
+    # /gift echoes back YOUR deposit: heading is the door you picked, and the
+    # body is exactly what you set down.
     c = client()
-    deposit_text(c, "fear", "the only fear so far")
-    sid = c.cookies.get("nightspot")
-    c.get("/gift")
-    gift_id = bank.get_session(sid)["gift_id"]
-    assert gift_id is not None
-    gift = bank.get_memory(gift_id)
-    assert gift["session_id"] != sid  # fell back to someone else's
+    deposit_text(c, "fear", "dog")
+    page = c.get("/gift").text
+    assert "<h1>Fear</h1>" in page          # heading = the door you chose
+    assert "dog" in page                     # your own words, not a stranger's
+    assert "Someone stood where you" not in page  # no swap on this screen
+    # Refresh-stable: still your deposit, unchanged.
+    assert "dog" in c.get("/gift").text
+
+
+def test_bank_pick_gift_powers_the_feed():
+    # The exchange now lives in the (future) daily feed, not on /gift, but the
+    # bank still selects a stranger's deposit: never your own, least-circulated
+    # first, with a cross-category fallback.
+    s1 = uuid.uuid4().hex
+    asker = uuid.uuid4().hex
+    m1 = bank.add_memory(s1, "rec", "text", "feed-rec-1")
+    pick = bank.pick_gift(asker, "rec")
+    assert pick is not None
+    assert pick["session_id"] != asker          # never the asker's own
+    # Asking as s1 never returns s1's own deposit.
+    own = bank.pick_gift(s1, "rec")
+    assert own is None or own["id"] != m1
 
 
 def test_voice_privacy():
@@ -310,13 +304,14 @@ def test_deposit_carries_photo_and_gift_photo_is_private():
     r = other.get("/gift-photo/{}".format(a_dep), follow_redirects=False)
     assert r.status_code in (302, 303) and r.status_code != 200
 
-    # ...but the giftee gets the photo, and the gift page shows it.
-    giftee = client()
-    deposit_text(giftee, "memory", "g")
-    bank.update_session(giftee.cookies.get("nightspot"), gift_id=a_dep)
-    r = giftee.get("/gift-photo/{}".format(a_dep))
+    # ...but a session it's assigned to (the future feed's recipient) gets it.
+    # (Reserved for the daily feed; the live /gift screen shows your own photo
+    # via /photo, so it no longer references /gift-photo.)
+    recipient = client()
+    deposit_text(recipient, "memory", "g")
+    bank.update_session(recipient.cookies.get("nightspot"), gift_id=a_dep)
+    r = recipient.get("/gift-photo/{}".format(a_dep))
     assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg"
-    assert "/gift-photo/{}".format(a_dep) in giftee.get("/gift").text
 
 
 def test_one_question_per_session():

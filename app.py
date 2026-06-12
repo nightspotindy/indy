@@ -29,7 +29,7 @@ from fastapi.templating import Jinja2Templates
 import bank
 import camera
 
-VERSION = "v8"
+VERSION = "v9"
 
 # Night window (local time). Night spans NIGHT_START..midnight..NIGHT_END.
 NIGHT_START = int(os.environ.get("NIGHT_START", "20"))
@@ -52,6 +52,7 @@ DOORS = {
         "button": "Give a recommendation",
         "heading": "Recommendation",
         "tagline": "Who's got it better than us?",
+        "kept": "You recommended this.",
         "gift_lede": "Someone stood where you're standing and recommended this.",
     },
     "memory": {
@@ -59,12 +60,14 @@ DOORS = {
         "heading": "Memory",
         "tagline": "I offer you the memory of a yellow rose seen at sunset "
                    "long before you were born",
+        "kept": "You left this behind.",
         "gift_lede": "Someone stood where you're standing and left this behind.",
     },
     "fear": {
         "button": "Tell us your fears",
         "heading": "Fear",
         "tagline": "It's okay to be existential sometimes",
+        "kept": "You set this down.",
         "gift_lede": "Someone stood where you're standing and set this down.",
     },
 }
@@ -326,20 +329,21 @@ def gift_page(request: Request):
         return RedirectResponse("/", status_code=303)
     if s["state"] != "deposited":
         return redirect_to_state(s["state"])
-    # Assignment is fixed once made: only pick if we haven't yet.
-    gift_id = s["gift_id"]
-    if gift_id is None:
-        chosen = bank.pick_gift(s["id"], s["path"])
-        if chosen is not None:
-            gift_id = chosen["id"]
-            bank.mark_given(gift_id)
-            bank.update_session(s["id"], gift_id=gift_id)
-    gift = bank.get_memory(gift_id) if gift_id is not None else None
-    lede = ""
+    # Confirmation: show the visitor their OWN deposit back — the door they
+    # chose as the heading, and what they set down. (Every deposit still lands
+    # in the bank for the future "a text a day from a stranger" feed; the
+    # stranger exchange happens there, not on this screen.)
+    gift = None
+    if s["deposit_id"] is not None:
+        gift = bank.get_memory(s["deposit_id"])
+    heading = "Yours now."
+    kept = ""
     if gift is not None:
-        lede = DOORS.get(gift["category"], DOORS["memory"])["gift_lede"]
+        door = DOORS.get(gift["category"], DOORS["memory"])
+        heading = door["heading"]
+        kept = door["kept"]
     return templates.TemplateResponse(
-        "gift.html", ctx(request, gift=gift, lede=lede))
+        "gift.html", ctx(request, gift=gift, heading=heading, kept=kept))
 
 
 @app.post("/carry")
@@ -485,12 +489,13 @@ def voice(request: Request, mem_id: int):
     s = current_session(request)
     if s is None:
         return RedirectResponse("/", status_code=303)
-    # Only servable to the session it was gifted to; everyone else is sent away.
-    if s["gift_id"] != mem_id:
-        return RedirectResponse("/", status_code=303)
     mem = bank.get_memory(mem_id)
     if mem is None or mem["kind"] != "voice":
         return Response(status_code=404)
+    # Servable to the owner (their own deposit, echoed back on /gift) or to the
+    # session it's been gifted to; everyone else is sent away.
+    if mem["session_id"] != s["id"] and s["gift_id"] != mem_id:
+        return RedirectResponse("/", status_code=303)
     path = os.path.join(VOICE_DIR, mem["body"])
     if not os.path.exists(path):
         return Response(status_code=404)
