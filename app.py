@@ -29,7 +29,7 @@ from fastapi.templating import Jinja2Templates
 import bank
 import camera
 
-VERSION = "v2"
+VERSION = "v3"
 
 # Night window (local time). Night spans NIGHT_START..midnight..NIGHT_END.
 NIGHT_START = int(os.environ.get("NIGHT_START", "20"))
@@ -57,7 +57,8 @@ DOORS = {
     "memory": {
         "button": "Share a memory",
         "heading": "Memory",
-        "tagline": "I offer you the memory of a yellow rose at sunset",
+        "tagline": "I offer you the memory of a yellow rose seen at sunset "
+                   "long before you were born",
         "gift_lede": "Someone stood where you're standing and left this behind.",
     },
     "fear": {
