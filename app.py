@@ -29,7 +29,7 @@ from fastapi.templating import Jinja2Templates
 import bank
 import camera
 
-VERSION = "v1"
+VERSION = "v2"
 
 # Night window (local time). Night spans NIGHT_START..midnight..NIGHT_END.
 NIGHT_START = int(os.environ.get("NIGHT_START", "20"))
@@ -50,25 +50,19 @@ VOICE_DIR = os.path.join("data", "voices")
 DOORS = {
     "rec": {
         "button": "Give a recommendation",
-        "heading": "Give a recommendation",
-        "prompt": "What should the next person who stands here see, eat, "
-                  "read, hear, or do? Hand it forward.",
+        "heading": "Recommendation",
         "tagline": "Who's got it better than us?",
         "gift_lede": "Someone stood where you're standing and recommended this.",
     },
     "memory": {
         "button": "Share a memory",
-        "heading": "Share a memory",
-        "prompt": "Leave a memory behind for a stranger to find. Something "
-                  "small and true.",
+        "heading": "Memory",
         "tagline": "I offer you the memory of a yellow rose at sunset",
         "gift_lede": "Someone stood where you're standing and left this behind.",
     },
     "fear": {
         "button": "Tell us your fears",
-        "heading": "Tell us your fears",
-        "prompt": "Set down something that scares you. It's lighter once "
-                  "it's out of your hands.",
+        "heading": "Fear",
         "tagline": "It's okay to be existential sometimes",
         "gift_lede": "Someone stood where you're standing and set this down.",
     },
