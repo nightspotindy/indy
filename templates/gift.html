@@ -5,6 +5,12 @@
 {% if gift %}
 <p>{{ lede }}</p>
 
+{% if gift.photo %}
+<figure class="full">
+  <img src="/gift-photo/{{ gift.id }}" alt="where they stood">
+</figure>
+{% endif %}
+
 {% if gift.kind == "voice" %}
 <audio controls src="/voice/{{ gift.id }}"></audio>
 {% else %}

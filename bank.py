@@ -30,6 +30,7 @@ _SCHEMA = {
         ("body", "TEXT"),
         ("created_at", "REAL"),
         ("times_given", "INTEGER DEFAULT 0"),
+        ("photo", "TEXT"),
     ],
     "sessions": [
         ("id", "TEXT PRIMARY KEY"),
@@ -130,12 +131,13 @@ def update_session(session_id: str, **fields: Any) -> None:
 
 # --- memories (the bank) ----------------------------------------------------
 
-def add_memory(session_id: str, category: str, kind: str, body: str) -> int:
+def add_memory(session_id: str, category: str, kind: str, body: str,
+               photo: Optional[str] = None) -> int:
     c = _conn()
     cur = c.execute(
         "INSERT INTO memories (session_id, category, kind, body, created_at, "
-        "times_given) VALUES (?,?,?,?,?,0)",
-        (session_id, category, kind, body, time.time()),
+        "times_given, photo) VALUES (?,?,?,?,?,0,?)",
+        (session_id, category, kind, body, time.time(), photo),
     )
     c.commit()
     return int(cur.lastrowid)

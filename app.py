@@ -29,7 +29,7 @@ from fastapi.templating import Jinja2Templates
 import bank
 import camera
 
-VERSION = "v6"
+VERSION = "v7"
 
 # Night window (local time). Night spans NIGHT_START..midnight..NIGHT_END.
 NIGHT_START = int(os.environ.get("NIGHT_START", "20"))
@@ -288,20 +288,25 @@ async def api_deposit(
     if s["state"] != "rec":
         return redirect_to_state(s["state"])
     category = s["path"]
+    # The depositor's chosen photo travels with their deposit, so whoever is
+    # gifted it sees where the stranger stood — not just their words. This
+    # makes each deposit a self-contained packet (photo + message) a future
+    # "a text a day from a stranger" feed could deliver whole.
+    photo = "{}-{}.jpg".format(s["id"], s["takes"])
+    if not os.path.exists(os.path.join(CAPTURE_DIR, photo)):
+        photo = None
     if mode == "voice" and audio is not None:
         data = await audio.read()
-        kind = "voice"
-        mem_id = bank.add_memory(s["id"], category, kind, "")
+        mem_id = bank.add_memory(s["id"], category, "voice", "", photo=photo)
         fname = "{}.webm".format(mem_id)
         with open(os.path.join(VOICE_DIR, fname), "wb") as f:
             f.write(data)
-        bank.update_session(s["id"], deposit_id=mem_id, state="deposited")
         # Store the filename as the body so it can be served back later.
-        bank.get_memory(mem_id)  # noop; body stays empty for voice
         _set_voice_body(mem_id, fname)
+        bank.update_session(s["id"], deposit_id=mem_id, state="deposited")
     else:
         text = (body or "").strip()[:2000]
-        mem_id = bank.add_memory(s["id"], category, "text", text)
+        mem_id = bank.add_memory(s["id"], category, "text", text, photo=photo)
         bank.update_session(s["id"], deposit_id=mem_id, state="deposited")
     return RedirectResponse("/gift", status_code=303)
 
@@ -446,6 +451,26 @@ def preview_jpg():
         return Response(status_code=204)
     return Response(content=frame, media_type="image/jpeg",
                     headers={"Cache-Control": "no-store"})
+
+
+# --- gifted deposit's photo (privacy-gated) ---------------------------------
+
+@app.get("/gift-photo/{mem_id}")
+def gift_photo(request: Request, mem_id: int):
+    """Serve the photo a deposit carries, but ONLY to its giftee."""
+    s = current_session(request)
+    if s is None:
+        return RedirectResponse("/", status_code=303)
+    if s["gift_id"] != mem_id:
+        return RedirectResponse("/", status_code=303)
+    mem = bank.get_memory(mem_id)
+    if mem is None or not mem["photo"]:
+        return Response(status_code=404)
+    path = os.path.join(CAPTURE_DIR, mem["photo"])
+    if not os.path.exists(path):
+        return Response(status_code=404)
+    return FileResponse(path, media_type="image/jpeg",
+                        headers={"Cache-Control": "no-store"})
 
 
 # --- voice playback (privacy-gated) -----------------------------------------

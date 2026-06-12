@@ -295,6 +295,30 @@ def test_voice_privacy():
     assert r.headers["content-type"] == "audio/webm"
 
 
+def test_deposit_carries_photo_and_gift_photo_is_private():
+    # The depositor's photo is recorded with their deposit...
+    a = client()
+    deposit_text(a, "memory", "with a photo")
+    a_sid = a.cookies.get("nightspot")
+    a_dep = bank.get_session(a_sid)["deposit_id"]
+    assert bank.get_memory(a_dep)["photo"]
+
+    # ...not servable to a session it wasn't gifted to...
+    other = client()
+    deposit_text(other, "memory", "o")
+    bank.update_session(other.cookies.get("nightspot"), gift_id=-999)
+    r = other.get("/gift-photo/{}".format(a_dep), follow_redirects=False)
+    assert r.status_code in (302, 303) and r.status_code != 200
+
+    # ...but the giftee gets the photo, and the gift page shows it.
+    giftee = client()
+    deposit_text(giftee, "memory", "g")
+    bank.update_session(giftee.cookies.get("nightspot"), gift_id=a_dep)
+    r = giftee.get("/gift-photo/{}".format(a_dep))
+    assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg"
+    assert "/gift-photo/{}".format(a_dep) in giftee.get("/gift").text
+
+
 def test_one_question_per_session():
     c = client()
     to_gifted(c, "memory")
