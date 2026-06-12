@@ -92,6 +92,34 @@ def to_gifted(c, door="memory", body="a small true thing"):
 
 # --- tests ------------------------------------------------------------------
 
+def test_root_skips_start_page_at_night():
+    orig = appmod.is_night
+    try:
+        appmod.is_night = lambda: True
+        c = client()
+        r = c.get("/", follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"] == "/capture"
+        assert c.cookies.get("nightspot")  # a session was started
+        shoot(c)  # advance to review
+        # Returning to / now resumes where we are, not back to capture.
+        r2 = c.get("/", follow_redirects=False)
+        assert r2.status_code == 303 and r2.headers["location"] == "/review"
+    finally:
+        appmod.is_night = orig
+
+
+def test_root_shows_sign_during_day():
+    orig = appmod.is_night
+    try:
+        appmod.is_night = lambda: False
+        c = client()
+        r = c.get("/", follow_redirects=False)
+        assert r.status_code == 200
+        assert "It's Better at Night" in r.text  # the daytime closed-sign
+    finally:
+        appmod.is_night = orig
+
+
 def test_no_session_bounces_to_landing():
     c = client()
     for path in ["/capture", "/review", "/path", "/rec", "/gift", "/exit",

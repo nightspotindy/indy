@@ -29,7 +29,7 @@ from fastapi.templating import Jinja2Templates
 import bank
 import camera
 
-VERSION = "v4"
+VERSION = "v5"
 
 # Night window (local time). Night spans NIGHT_START..midnight..NIGHT_END.
 NIGHT_START = int(os.environ.get("NIGHT_START", "20"))
@@ -138,6 +138,21 @@ def latest_take_path(session_id: str, takes: int) -> Optional[str]:
 
 @app.get("/", response_class=HTMLResponse)
 def landing(request: Request):
+    s = current_session(request)
+    if s is not None:
+        # Returning mid-flow (or after a refresh): resume where they actually
+        # are. Never silently restart someone's run.
+        return redirect_to_state(s["state"])
+    if is_night():
+        # Night: skip the start page entirely — scanning the QR drops you
+        # straight onto the spot.
+        sid = uuid.uuid4().hex
+        bank.create_session(sid, state="capture")
+        resp = RedirectResponse("/capture", status_code=303)
+        resp.set_cookie(COOKIE, sid, max_age=SESSION_TTL, httponly=True,
+                        samesite="lax")
+        return resp
+    # Daytime: the "it's better at night" sign stays up.
     return templates.TemplateResponse("landing.html", ctx(request))
 
 
