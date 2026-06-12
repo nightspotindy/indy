@@ -108,6 +108,22 @@ def test_root_skips_start_page_at_night():
         appmod.is_night = orig
 
 
+def test_finished_session_restarts_from_root_at_night():
+    # A done run must not trap you on /getout — re-scanning starts fresh.
+    orig = appmod.is_night
+    try:
+        appmod.is_night = lambda: True
+        c = client()
+        to_gifted(c, "memory")
+        c.get("/getout")  # advances state -> done
+        sid_before = c.cookies.get("nightspot")
+        r = c.get("/", follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"] == "/capture"
+        assert c.cookies.get("nightspot") != sid_before  # a new run
+    finally:
+        appmod.is_night = orig
+
+
 def test_root_shows_sign_during_day():
     orig = appmod.is_night
     try:

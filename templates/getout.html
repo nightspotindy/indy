@@ -9,8 +9,10 @@
 <form method="get" action="/download">
   <button type="submit">Download your photo</button>
 </form>
+<p class="escape"><a href="/">Again? — back to the spot</a></p>
 {% else %}
 <p>No photo was kept. That happens.</p>
+<p class="escape"><a href="/">Again? — back to the spot</a></p>
 {% endif %}
 {% endblock %}
 

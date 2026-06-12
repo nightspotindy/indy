@@ -29,7 +29,7 @@ from fastapi.templating import Jinja2Templates
 import bank
 import camera
 
-VERSION = "v5"
+VERSION = "v6"
 
 # Night window (local time). Night spans NIGHT_START..midnight..NIGHT_END.
 NIGHT_START = int(os.environ.get("NIGHT_START", "20"))
@@ -139,10 +139,12 @@ def latest_take_path(session_id: str, takes: int) -> Optional[str]:
 @app.get("/", response_class=HTMLResponse)
 def landing(request: Request):
     s = current_session(request)
-    if s is not None:
+    if s is not None and s["state"] != "done":
         # Returning mid-flow (or after a refresh): resume where they actually
-        # are. Never silently restart someone's run.
+        # are. Never silently restart someone's run...
         return redirect_to_state(s["state"])
+    # ...but a FINISHED run is over — the next scan of the QR begins fresh
+    # instead of trapping you on the get-out page.
     if is_night():
         # Night: skip the start page entirely — scanning the QR drops you
         # straight onto the spot.
