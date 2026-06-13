@@ -148,7 +148,16 @@ cd /home/pi
 git clone <this-repo> nightspot && cd nightspot
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
+pip install gphoto2   # optional: smooth, video-rate liveview (see below)
 ```
+
+**Smooth liveview (recommended).** By default the preview pulls one frame per
+`gphoto2` subprocess (~1 fps — laggy). Installing the `gphoto2` python binding
+(needs `libgphoto2-dev`, already apt-installed above) lets nightspot hold the
+camera open and stream the preview at video rate. It's auto-detected: if the
+binding imports, captures + preview use the held-open camera; if not,
+everything falls back to subprocess gphoto2. Restart the service after
+installing it.
 
 `/etc/systemd/system/nightspot.service`:
 

@@ -24,6 +24,17 @@ MOCK = os.environ.get("MOCK_CAMERA") == "1"
 PREVIEW_TTL = float(os.environ.get("PREVIEW_TTL", "2"))
 CAPTURE_TIMEOUT = 30
 
+# When the python-gphoto2 binding is installed (on the Pi: `pip install
+# gphoto2`), hold the camera open and pull frames continuously for smooth,
+# video-rate liveview instead of spawning a fresh gphoto2 process per frame.
+# Falls back to subprocess gphoto2 (or mock) when the binding isn't present, so
+# the dev Mac and un-upgraded Pis keep working unchanged.
+try:
+    import gphoto2 as gp  # type: ignore
+    HAVE_GP = True
+except Exception:
+    HAVE_GP = False
+
 # Rotate every frame this many degrees CLOCKWISE before serving/saving. Sony
 # liveview + capture come out in the sensor's orientation, so a window-mounted
 # body usually needs 90/180/270. 0 = leave as-is.
@@ -37,6 +48,30 @@ CAPTURE_DIR = os.path.join("data", "captures")
 
 # One body, one shutter: every real camera command is serialized.
 _camera_lock = threading.Lock()
+
+# Persistent libgphoto2 handle (library mode only).
+_gp_cam = None
+
+
+def _gp_handle():
+    """Open (once) and return the persistent camera handle."""
+    global _gp_cam
+    if _gp_cam is None:
+        cam = gp.Camera()
+        cam.init()
+        _gp_cam = cam
+    return _gp_cam
+
+
+def _gp_reset() -> None:
+    """Drop the handle so it's re-opened next time (after any error)."""
+    global _gp_cam
+    if _gp_cam is not None:
+        try:
+            _gp_cam.exit()
+        except Exception:
+            pass
+    _gp_cam = None
 
 # Preview cache, guarded by its own lock so polling clients share one frame.
 _preview_lock = threading.Lock()
@@ -133,8 +168,24 @@ def capture(session_id: str, take: int) -> str:
                 f.write(data)
             _rotate_file(path)
             return path
-        # gphoto2 downloads directly to our target filename. --keep leaves an
-        # archive copy on the camera's card; --force-overwrite avoids prompts.
+        if HAVE_GP:
+            # Shoot via the held handle. The image stays on the card (the
+            # camera's PC+Camera save dest) — same effect as gphoto2 --keep.
+            try:
+                cam = _gp_handle()
+                fp = cam.capture(gp.GP_CAPTURE_IMAGE)
+                cf = cam.file_get(fp.folder, fp.name, gp.GP_FILE_TYPE_NORMAL)
+                cf.save(path)
+            except Exception:
+                _gp_reset()
+                raise
+            if not os.path.exists(path):
+                raise RuntimeError("capture produced no file")
+            _rotate_file(path)
+            return path
+        # Subprocess fallback. gphoto2 downloads directly to our target
+        # filename. --keep leaves an archive copy on the card; --force-overwrite
+        # avoids prompts.
         cmd = [
             "gphoto2",
             "--capture-image-and-download",
@@ -154,6 +205,12 @@ def _pull_preview_frame() -> Optional[bytes]:
     """Pull a single fresh liveview frame from the camera (or mock)."""
     if MOCK:
         return _placeholder("live - {}".format(int(time.time())), "preview")
+    if HAVE_GP:
+        # Held-open camera: this is a fast in-process call (~tens of ms), which
+        # is what makes the preview smooth.
+        cam = _gp_handle()
+        cf = cam.capture_preview()
+        return bytes(memoryview(cf.get_data_and_size()))
     proc = subprocess.run(
         ["gphoto2", "--capture-preview", "--stdout"],
         timeout=CAPTURE_TIMEOUT,
@@ -178,6 +235,7 @@ def _refresh_preview_once() -> None:
     try:
         data = _pull_preview_frame()
     except Exception:
+        _gp_reset()  # drop a bad handle so it's reopened next round
         data = None
     finally:
         _camera_lock.release()
@@ -189,9 +247,13 @@ def _refresh_preview_once() -> None:
 
 
 def _preview_worker() -> None:
+    # Library mode holds the camera open, so loop nearly continuously for a
+    # smooth feed. Subprocess/mock mode pays a per-frame open cost, so pace it
+    # to PREVIEW_TTL to avoid hammering the camera/CPU.
+    fast = HAVE_GP and not MOCK
     while True:
         _refresh_preview_once()
-        time.sleep(PREVIEW_TTL)
+        time.sleep(0.03 if fast else PREVIEW_TTL)
 
 
 def start_preview() -> None:
