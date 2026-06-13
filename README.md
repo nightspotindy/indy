@@ -40,6 +40,7 @@ MOCK_CAMERA=1 python3 test_app.py
 | `NIGHT_END`    | `6`     | Hour (local) night ends.                           |
 | `MAX_TAKES`    | `5`     | Retake ceiling; Sad button disappears at the cap.  |
 | `PREVIEW_TTL`  | `2`     | Seconds between real liveview pulls (server-side). |
+| `CAMERA_ROTATE`| `0`     | Rotate frames N° clockwise (0/90/180/270) — fixes a sideways preview. |
 | `TIP_URL`      | empty   | Shelved tip door; restore path is in `/exit`.      |
 | `ADMIN_KEY`    | `nightspot` | Key for the `/admin` dashboard. **Change this.** |
 | `SMTP_HOST`    | empty   | Mail server; set (with the rest) to enable email alerts. |

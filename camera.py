@@ -24,6 +24,11 @@ MOCK = os.environ.get("MOCK_CAMERA") == "1"
 PREVIEW_TTL = float(os.environ.get("PREVIEW_TTL", "2"))
 CAPTURE_TIMEOUT = 30
 
+# Rotate every frame this many degrees CLOCKWISE before serving/saving. Sony
+# liveview + capture come out in the sensor's orientation, so a window-mounted
+# body usually needs 90/180/270. 0 = leave as-is.
+CAMERA_ROTATE = int(os.environ.get("CAMERA_ROTATE", "0"))
+
 CAPTURE_DIR = os.path.join("data", "captures")
 
 # One body, one shutter: every real camera command is serialized.
@@ -37,6 +42,29 @@ _preview_data = None  # type: Optional[bytes]
 
 def _ensure_dirs() -> None:
     os.makedirs(CAPTURE_DIR, exist_ok=True)
+
+
+def _rotate_bytes(data: bytes) -> bytes:
+    """Rotate a JPEG by CAMERA_ROTATE degrees clockwise. No-op when 0."""
+    if CAMERA_ROTATE % 360 == 0 or not data:
+        return data
+    from PIL import Image
+    img = Image.open(io.BytesIO(data))
+    img = img.rotate(-CAMERA_ROTATE, expand=True)  # PIL rotates CCW; negate
+    out = io.BytesIO()
+    img.convert("RGB").save(out, "JPEG", quality=88)
+    return out.getvalue()
+
+
+def _rotate_file(path: str) -> None:
+    if CAMERA_ROTATE % 360 == 0:
+        return
+    with open(path, "rb") as f:
+        data = f.read()
+    rotated = _rotate_bytes(data)
+    if rotated is not data:
+        with open(path, "wb") as f:
+            f.write(rotated)
 
 
 def _placeholder(label: str, tone: str = "capture") -> bytes:
@@ -82,6 +110,7 @@ def capture(session_id: str, take: int) -> str:
             data = _placeholder("take {} - {}".format(take, session_id), "capture")
             with open(path, "wb") as f:
                 f.write(data)
+            _rotate_file(path)
             return path
         # gphoto2 downloads directly to our target filename. --keep leaves an
         # archive copy on the camera's card; --force-overwrite avoids prompts.
@@ -96,6 +125,7 @@ def capture(session_id: str, take: int) -> str:
                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if not os.path.exists(path):
             raise RuntimeError("gphoto2 reported success but no file was written")
+        _rotate_file(path)
         return path
 
 
@@ -141,6 +171,7 @@ def preview() -> Optional[bytes]:
         _camera_lock.release()
 
     if data is not None:
+        data = _rotate_bytes(data)
         with _preview_lock:
             _preview_ts = time.monotonic()
             _preview_data = data

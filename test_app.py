@@ -10,6 +10,7 @@ refused; double shutter-fire refused with clean JSON; same-category gifting
 with fallback and a refresh-stable gift; voice privacy; one question per
 session; and the attachment disposition on the photo download.
 """
+import io
 import os
 import tempfile
 import uuid
@@ -353,6 +354,19 @@ def test_ask_terminal_sets_done_and_offers_restart():
         assert r.headers["location"] == "/capture"  # restarts, not trapped
     finally:
         appmod.is_night = orig
+
+
+def test_camera_rotation_swaps_dimensions():
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (100, 40), "black").save(buf, "JPEG")
+    orig = camera.CAMERA_ROTATE
+    camera.CAMERA_ROTATE = 90
+    try:
+        out = camera._rotate_bytes(buf.getvalue())
+    finally:
+        camera.CAMERA_ROTATE = orig
+    assert Image.open(io.BytesIO(out)).size == (40, 100)  # rotated
 
 
 def test_notify_is_noop_when_unconfigured():
