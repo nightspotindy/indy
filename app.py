@@ -29,7 +29,7 @@ from fastapi.templating import Jinja2Templates
 import bank
 import camera
 
-VERSION = "v11"
+VERSION = "v12"
 
 # Night window (local time). Night spans NIGHT_START..midnight..NIGHT_END.
 NIGHT_START = int(os.environ.get("NIGHT_START", "20"))
@@ -42,6 +42,10 @@ COOKIE = "nightspot"
 # A Give/tip door is intentionally shelved for now. Leave the URL here and a
 # commented path in /exit so it can be restored later.
 TIP_URL = os.environ.get("TIP_URL", "")
+
+# Admin dashboard key. Override in production: ADMIN_KEY=... Access the
+# dashboard at /admin?key=<ADMIN_KEY>.
+ADMIN_KEY = os.environ.get("ADMIN_KEY", "nightspot")
 
 CAPTURE_DIR = os.path.join("data", "captures")
 VOICE_DIR = os.path.join("data", "voices")
@@ -366,9 +370,113 @@ def exit_page(request: Request):
         return RedirectResponse("/", status_code=303)
     if s["state"] not in ("gifted", "done"):
         return redirect_to_state(s["state"])
-    # NOTE: a third "Give / tip" door is shelved. To restore it, surface
+    # NOTE: a "Give / tip" door is still shelved. To restore it, surface
     # TIP_URL here as a button -> external tip page.
     return templates.TemplateResponse("exit.html", ctx(request))
+
+
+# --- subscribe: "a text a day from a stranger" ------------------------------
+
+@app.get("/subscribe", response_class=HTMLResponse)
+def subscribe_page(request: Request):
+    s = current_session(request)
+    if s is None:
+        return RedirectResponse("/", status_code=303)
+    if s["state"] not in ("gifted", "done"):
+        return redirect_to_state(s["state"])
+    # After a successful signup we land back here with ?ok=<category> so a
+    # refresh can't re-submit.
+    ok = request.query_params.get("ok")
+    return templates.TemplateResponse(
+        "subscribe.html", ctx(request, ok=ok))
+
+
+@app.post("/api/subscribe")
+def api_subscribe(request: Request, name: str = Form(""),
+                  phone: str = Form("")):
+    s = current_session(request)
+    if s is None:
+        return RedirectResponse("/", status_code=303)
+    if s["state"] not in ("gifted", "done"):
+        return redirect_to_state(s["state"])
+    name = (name or "").strip()[:80]
+    phone = (phone or "").strip()[:40]
+    if not name or not phone:
+        return RedirectResponse("/subscribe", status_code=303)
+    # Set aside a prior stranger's deposit for them.
+    chosen = bank.pick_for_subscriber()
+    gift_id = chosen["id"] if chosen is not None else None
+    category = chosen["category"] if chosen is not None else "memory"
+    if gift_id is not None:
+        bank.mark_given(gift_id)
+    bank.add_subscriber(name, phone, gift_id, category)
+    # TODO(sms): this is where the daily feed would queue/send an MMS via a
+    # provider (Twilio etc.) — name/phone/gift_id are all recorded for it.
+    return RedirectResponse("/subscribe?ok={}".format(category),
+                            status_code=303)
+
+
+# --- admin dashboard --------------------------------------------------------
+
+def _admin_ok(request: Request) -> bool:
+    return request.query_params.get("key") == ADMIN_KEY
+
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin(request: Request):
+    if not _admin_ok(request):
+        return Response("nope", status_code=401)
+
+    def fmt(ts):
+        if not ts:
+            return ""
+        return time.strftime("%Y-%m-%d %H:%M", time.localtime(ts))
+
+    mems = []
+    for r in bank.list_memories():
+        d = dict(r)
+        d["when"] = fmt(d.get("created_at"))
+        mems.append(d)
+    questions = []
+    for r in bank.list_questions():
+        d = dict(r)
+        d["when"] = fmt(d.get("created_at"))
+        questions.append(d)
+    subs = []
+    for r in bank.list_subscribers():
+        d = dict(r)
+        d["when"] = fmt(d.get("created_at"))
+        subs.append(d)
+    return templates.TemplateResponse(
+        "admin.html",
+        ctx(request, key=ADMIN_KEY, mems=mems, questions=questions, subs=subs),
+    )
+
+
+@app.get("/admin/photo/{mem_id}")
+def admin_photo(request: Request, mem_id: int):
+    if not _admin_ok(request):
+        return Response("nope", status_code=401)
+    mem = bank.get_memory(mem_id)
+    if mem is None or not mem["photo"]:
+        return Response(status_code=404)
+    path = os.path.join(CAPTURE_DIR, mem["photo"])
+    if not os.path.exists(path):
+        return Response(status_code=404)
+    return FileResponse(path, media_type="image/jpeg")
+
+
+@app.get("/admin/voice/{mem_id}")
+def admin_voice(request: Request, mem_id: int):
+    if not _admin_ok(request):
+        return Response("nope", status_code=401)
+    mem = bank.get_memory(mem_id)
+    if mem is None or mem["kind"] != "voice" or not mem["body"]:
+        return Response(status_code=404)
+    path = os.path.join(VOICE_DIR, mem["body"])
+    if not os.path.exists(path):
+        return Response(status_code=404)
+    return FileResponse(path, media_type="audio/webm")
 
 
 # --- 8. ask -----------------------------------------------------------------

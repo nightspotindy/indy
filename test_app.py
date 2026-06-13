@@ -348,6 +348,45 @@ def test_ask_terminal_sets_done_and_offers_restart():
         appmod.is_night = orig
 
 
+def test_subscribe_records_name_phone_and_assignment():
+    c = client()
+    to_gifted(c, "memory")
+    assert "name" in c.get("/subscribe").text  # the signup form is shown
+    r = c.post("/api/subscribe",
+               data={"name": "Dana", "phone": "555-0100"},
+               follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"].startswith("/subscribe?ok=")
+    subs = [dict(x) for x in bank.list_subscribers()]
+    mine = [x for x in subs if x["phone"] == "555-0100"]
+    assert len(mine) == 1
+    assert mine[0]["name"] == "Dana"
+    assert mine[0]["gift_id"] is not None      # a prior deposit was set aside
+    # The confirmation view renders without re-submitting.
+    assert "on the list" in c.get("/subscribe?ok=memory").text
+
+
+def test_subscribe_requires_finished_flow():
+    c = client()
+    begin(c)  # state = capture, not yet gifted
+    r = c.get("/subscribe", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/capture"
+    r = c.post("/api/subscribe", data={"name": "x", "phone": "y"},
+               follow_redirects=False)
+    assert r.headers["location"] == "/capture"
+
+
+def test_admin_requires_key():
+    c = client()
+    deposit_text(c, "fear", "admin-visible-deposit")
+    assert c.get("/admin", follow_redirects=False).status_code == 401
+    assert c.get("/admin?key=wrong", follow_redirects=False).status_code == 401
+    page = c.get("/admin?key={}".format(appmod.ADMIN_KEY))
+    assert page.status_code == 200
+    assert "admin-visible-deposit" in page.text  # submissions are listed
+    # Admin media is also key-gated.
+    assert c.get("/admin/photo/1", follow_redirects=False).status_code == 401
+
+
 def test_photo_download_attachment_disposition():
     c = client()
     to_gifted(c, "memory")

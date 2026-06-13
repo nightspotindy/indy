@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block body %}
+{% if ok %}
+<h1>It'll find you.</h1>
+<p>You're on the list. A stranger's {{ ok }} is set aside for you. It comes
+when it comes.</p>
+<a class="button" href="/getout">Get Out!</a>
+{% else %}
+<h1>One a day, from a stranger</h1>
+<p>Leave your name and number. One thing someone set down on this spot — a
+recommendation, a memory, a fear — will find its way to you.</p>
+<form method="post" action="/api/subscribe">
+  <input type="text" name="name" maxlength="80" placeholder="Name" required>
+  <input type="text" name="phone" inputmode="tel" maxlength="40"
+         placeholder="Phone number" required>
+  <button type="submit">Send me one</button>
+</form>
+<p class="escape"><a href="/exit">Never mind</a></p>
+{% endif %}
+{% endblock %}
+
+{% block footer %}<p>It's better at night.</p>{% endblock %}

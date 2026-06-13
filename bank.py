@@ -47,6 +47,15 @@ _SCHEMA = {
         ("body", "TEXT"),
         ("created_at", "REAL"),
     ],
+    "subscribers": [
+        ("id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
+        ("name", "TEXT"),
+        ("phone", "TEXT UNIQUE"),
+        ("gift_id", "INTEGER"),       # the prior deposit set aside for them
+        ("category", "TEXT"),         # its category (rec|memory|fear)
+        ("created_at", "REAL"),
+        ("sent", "INTEGER DEFAULT 0"),  # 0 until the daily feed delivers it
+    ],
 }
 
 
@@ -200,3 +209,43 @@ def get_question(session_id: str) -> Optional[sqlite3.Row]:
     return c.execute(
         "SELECT * FROM questions WHERE session_id=?", (session_id,)
     ).fetchone()
+
+
+# --- subscribers (the "a text a day from a stranger" feed) ------------------
+
+def pick_for_subscriber() -> Optional[sqlite3.Row]:
+    """Choose one prior deposit to set aside for a new subscriber:
+    least-circulated first, any category."""
+    c = _conn()
+    return c.execute(
+        "SELECT * FROM memories ORDER BY times_given ASC, id ASC LIMIT 1"
+    ).fetchone()
+
+
+def add_subscriber(name: str, phone: str, gift_id: Optional[int],
+                   category: str) -> None:
+    """Record a signup. Keyed by phone (re-signing updates the row)."""
+    c = _conn()
+    c.execute(
+        "INSERT OR REPLACE INTO subscribers (name, phone, gift_id, category, "
+        "created_at, sent) VALUES (?,?,?,?,?,0)",
+        (name, phone, gift_id, category, time.time()),
+    )
+    c.commit()
+
+
+# --- admin read-outs --------------------------------------------------------
+
+def list_memories() -> List[sqlite3.Row]:
+    c = _conn()
+    return c.execute("SELECT * FROM memories ORDER BY id DESC").fetchall()
+
+
+def list_questions() -> List[sqlite3.Row]:
+    c = _conn()
+    return c.execute("SELECT * FROM questions ORDER BY id DESC").fetchall()
+
+
+def list_subscribers() -> List[sqlite3.Row]:
+    c = _conn()
+    return c.execute("SELECT * FROM subscribers ORDER BY id DESC").fetchall()

@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>nightspot // admin</title>
+  <style>
+    :root { --ink:#000; --paper:#fff; --accent:#ff6a00; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 1.5rem;
+      background: var(--paper); color: var(--ink);
+      font-family: "Courier New", Courier, monospace; font-size: 14px;
+    }
+    ::selection { background: var(--accent); color: var(--paper); }
+    h1 { font-size: 1.4rem; letter-spacing: .04em; margin: 0 0 .25rem; }
+    h2 {
+      font-size: 1rem; text-transform: uppercase; letter-spacing: .12em;
+      border-bottom: 1px solid var(--ink); padding-bottom: .35rem;
+      margin: 2rem 0 .75rem;
+    }
+    .muted { color: #666; margin: 0 0 1.5rem; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td {
+      border: 1px solid var(--ink); padding: .45rem .5rem;
+      text-align: left; vertical-align: top; word-break: break-word;
+    }
+    th { text-transform: uppercase; letter-spacing: .08em; font-size: .8rem; }
+    tr:hover td { background: #faf4ef; }
+    .tag {
+      display: inline-block; border: 1px solid var(--ink);
+      padding: 0 .35rem; text-transform: uppercase; font-size: .75rem;
+      letter-spacing: .08em;
+    }
+    .tag.fear { border-color: var(--accent); color: var(--accent); }
+    img.thumb { display: block; width: 96px; height: auto; border: 1px solid var(--ink); }
+    audio { width: 220px; }
+    .count { color: var(--accent); }
+    .empty { color: #999; font-style: italic; }
+    code { background: #f0eae4; padding: 0 .25rem; }
+  </style>
+</head>
+<body>
+  <h1>nightspot // admin <span class="count">{{ version }}</span></h1>
+  <p class="muted">All submissions. Keep this URL (with its key) private.</p>
+
+  <h2>Subscribers <span class="count">({{ subs|length }})</span></h2>
+  {% if subs %}
+  <table>
+    <tr><th>id</th><th>name</th><th>phone</th><th>set aside</th>
+        <th>when</th><th>sent?</th></tr>
+    {% for s in subs %}
+    <tr>
+      <td>{{ s.id }}</td>
+      <td>{{ s.name }}</td>
+      <td>{{ s.phone }}</td>
+      <td><span class="tag {{ s.category }}">{{ s.category }}</span> #{{ s.gift_id }}</td>
+      <td>{{ s.when }}</td>
+      <td>{{ "yes" if s.sent else "no" }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="empty">No signups yet.</p>{% endif %}
+
+  <h2>Deposits <span class="count">({{ mems|length }})</span></h2>
+  {% if mems %}
+  <table>
+    <tr><th>id</th><th>category</th><th>kind</th><th>given</th>
+        <th>content</th><th>photo</th><th>when</th></tr>
+    {% for m in mems %}
+    <tr>
+      <td>{{ m.id }}</td>
+      <td><span class="tag {{ m.category }}">{{ m.category }}</span></td>
+      <td>{{ m.kind }}</td>
+      <td>{{ m.times_given }}</td>
+      <td>
+        {% if m.kind == "voice" %}
+          <audio controls src="/admin/voice/{{ m.id }}?key={{ key }}"></audio>
+        {% else %}
+          {{ m.body }}
+        {% endif %}
+      </td>
+      <td>
+        {% if m.photo %}
+          <a href="/admin/photo/{{ m.id }}?key={{ key }}" target="_blank">
+            <img class="thumb" src="/admin/photo/{{ m.id }}?key={{ key }}" alt="">
+          </a>
+        {% else %}<span class="empty">—</span>{% endif %}
+      </td>
+      <td>{{ m.when }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="empty">No deposits yet.</p>{% endif %}
+
+  <h2>Questions for the window <span class="count">({{ questions|length }})</span></h2>
+  {% if questions %}
+  <table>
+    <tr><th>id</th><th>question</th><th>when</th></tr>
+    {% for q in questions %}
+    <tr><td>{{ q.id }}</td><td>{{ q.body }}</td><td>{{ q.when }}</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="empty">No questions yet.</p>{% endif %}
+</body>
+</html>

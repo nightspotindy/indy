@@ -41,6 +41,41 @@ MOCK_CAMERA=1 python3 test_app.py
 | `MAX_TAKES`    | `5`     | Retake ceiling; Sad button disappears at the cap.  |
 | `PREVIEW_TTL`  | `2`     | Seconds between real liveview pulls (server-side). |
 | `TIP_URL`      | empty   | Shelved tip door; restore path is in `/exit`.      |
+| `ADMIN_KEY`    | `nightspot` | Key for the `/admin` dashboard. **Change this.** |
+
+## Admin dashboard
+
+A web view of every submission lives at **`/admin?key=<ADMIN_KEY>`** (default
+key `nightspot` — override with the `ADMIN_KEY` env var before going live).
+It lists, newest first:
+
+- **Subscribers** — name, phone, the deposit set aside for them, sent status.
+- **Deposits** — every recommendation / memory / fear, text or voice (inline
+  audio), with the photo thumbnail and how many times it's been given.
+- **Questions for the window.**
+
+Photos and voice in the dashboard are served by `/admin/photo/{id}` and
+`/admin/voice/{id}`, also key-gated. Keep the URL (with its key) private.
+
+## "A text a day from a stranger" (signup)
+
+The exit menu's **Get one** door (`/subscribe`) takes a name + phone and sets
+aside one prior stranger's deposit (least-circulated first) for that person,
+recorded in the `subscribers` table.
+
+**Sending the actual text is not wired yet** — it needs an SMS/MMS provider.
+The send hook is marked `TODO(sms)` in `app.py`'s `api_subscribe`: name,
+phone, and the assigned `gift_id` are all stored, so a daily job can later
+pull un-sent rows (`SELECT * FROM subscribers WHERE sent=0`), MMS the deposit's
+photo + text via Twilio (or similar), and flip `sent=1`. HTTPS via the
+Cloudflare Tunnel is already required for the microphone, so the public URL is
+in place.
+
+Read the signups:
+
+```bash
+sqlite3 -header -column data/nightspot.db "SELECT id,name,phone,category,gift_id,datetime(created_at,'unixepoch','localtime') AS at,sent FROM subscribers ORDER BY id;"
+```
 
 ## Sony a7 III prep (for the real rig)
 
