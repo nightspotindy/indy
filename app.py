@@ -10,6 +10,7 @@ The flow is a state machine stored in SQLite and keyed to a session cookie
 (1 hour TTL). No skipping ahead, no going back, no replays: any out-of-order
 request is redirected to wherever the session actually is.
 """
+import asyncio
 import logging
 import os
 import time
@@ -23,6 +24,7 @@ from fastapi.responses import (
     JSONResponse,
     RedirectResponse,
     Response,
+    StreamingResponse,
 )
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -52,7 +54,7 @@ import bank  # noqa: E402  (after the env file is loaded)
 import camera  # noqa: E402
 import notify  # noqa: E402
 
-VERSION = "v20"
+VERSION = "v21"
 
 # Night window (local time). Night spans NIGHT_START..midnight..NIGHT_END.
 NIGHT_START = int(os.environ.get("NIGHT_START", "20"))
@@ -638,6 +640,29 @@ def preview_jpg():
         return Response(status_code=204)
     return Response(content=frame, media_type="image/jpeg",
                     headers={"Cache-Control": "no-store"})
+
+
+@app.get("/stream.mjpg")
+async def stream_mjpg():
+    """Continuous MJPEG (multipart/x-mixed-replace) stream of the live preview.
+    An <img> pointed here updates on its own at the cache's frame rate — no
+    client-side polling, so it's smooth instead of once-a-second."""
+    async def gen():
+        last = None
+        while True:
+            frame = camera.preview()
+            if frame is not None and frame is not last:
+                last = frame
+                yield (b"--frame\r\nContent-Type: image/jpeg\r\n"
+                       b"Content-Length: " + str(len(frame)).encode() +
+                       b"\r\n\r\n" + frame + b"\r\n")
+            await asyncio.sleep(0.05)  # cap ~20 fps; yields only new frames
+
+    return StreamingResponse(
+        gen(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
 
 
 # --- gifted deposit's photo (privacy-gated) ---------------------------------

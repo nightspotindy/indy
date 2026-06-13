@@ -9,8 +9,8 @@
 {% endif %}
 
 <figure>
-  <img id="preview" src="/preview.jpg" alt="the spot, right now"
-       onload="this.style.display=''" onerror="this.style.display='none'">
+  <img id="preview" src="/stream.mjpg" alt="the spot, right now"
+       onerror="previewFallback()">
   <figcaption>the spot, right now</figcaption>
 </figure>
 
@@ -23,11 +23,17 @@
 
 {% block script %}
 <script>
-  function refresh() {
+  // The MJPEG stream updates the <img> on its own. If it ever fails (e.g. a
+  // proxy buffers the stream), fall back to polling single frames.
+  var _polling = false;
+  function previewFallback() {
     var img = document.getElementById('preview');
-    if (!img) return;
-    img.src = '/preview.jpg?t=' + Date.now();
+    if (_polling) { img.style.display = 'none'; return; }
+    _polling = true;
+    img.onerror = function () { this.style.display = 'none'; };
+    function poll() { img.src = '/preview.jpg?t=' + Date.now(); }
+    poll();
+    setInterval(poll, 1000);
   }
-  setInterval(refresh, 3000);
 </script>
 {% endblock %}
