@@ -29,6 +29,10 @@ CAPTURE_TIMEOUT = 30
 # body usually needs 90/180/270. 0 = leave as-is.
 CAMERA_ROTATE = int(os.environ.get("CAMERA_ROTATE", "0"))
 
+# Max width/height (px) for liveview frames served to phones. Downscaling keeps
+# the preview light so once-a-second polling doesn't choke a mobile browser.
+PREVIEW_MAX = int(os.environ.get("PREVIEW_MAX", "800"))
+
 CAPTURE_DIR = os.path.join("data", "captures")
 
 # One body, one shutter: every real camera command is serialized.
@@ -54,6 +58,23 @@ def _rotate_bytes(data: bytes) -> bytes:
     out = io.BytesIO()
     img.convert("RGB").save(out, "JPEG", quality=88)
     return out.getvalue()
+
+
+def _process_preview(data: bytes) -> bytes:
+    """Rotate + downscale a liveview frame so it's light for phones to poll."""
+    if not data:
+        return data
+    try:
+        from PIL import Image
+        img = Image.open(io.BytesIO(data))
+        if CAMERA_ROTATE % 360 != 0:
+            img = img.rotate(-CAMERA_ROTATE, expand=True)
+        img.thumbnail((PREVIEW_MAX, PREVIEW_MAX))
+        out = io.BytesIO()
+        img.convert("RGB").save(out, "JPEG", quality=70)
+        return out.getvalue()
+    except Exception:
+        return _rotate_bytes(data)
 
 
 def _rotate_file(path: str) -> None:
@@ -161,7 +182,7 @@ def _refresh_preview_once() -> None:
     finally:
         _camera_lock.release()
     if data is not None:
-        data = _rotate_bytes(data)
+        data = _process_preview(data)
         with _preview_lock:
             _preview_ts = time.monotonic()
             _preview_data = data
