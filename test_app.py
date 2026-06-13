@@ -380,7 +380,7 @@ def test_events_fire_notifications():
     # A deposit, a question, and a signup each push an email.
     sent = []
     orig = notify.send
-    notify.send = lambda subject, body: sent.append((subject, body))
+    notify.send = lambda subject, body, **kw: sent.append((subject, body, kw))
     try:
         c = client()
         deposit_text(c, "fear", "dog")
@@ -392,10 +392,13 @@ def test_events_fire_notifications():
                follow_redirects=False)
     finally:
         notify.send = orig
-    subjects = " ".join(s for s, _ in sent).lower()
+    subjects = " ".join(s for s, _b, _k in sent).lower()
     assert "a fear was left" in subjects
     assert "question for the window" in subjects
     assert "new signup" in subjects
+    # The deposit alert carries the photo as an attachment.
+    deposit = [k for s, _b, k in sent if "was left" in s][0]
+    assert deposit.get("attach_path")
 
 
 def test_subscribe_records_name_phone_and_assignment():

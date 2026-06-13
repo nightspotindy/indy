@@ -144,36 +144,47 @@ def _pull_preview_frame() -> Optional[bytes]:
     return proc.stdout
 
 
-def preview() -> Optional[bytes]:
-    """Return a recent liveview JPEG, or None if unavailable.
+_worker_lock = threading.Lock()
+_worker_started = False
 
-    Throttled server-side to one real pull per PREVIEW_TTL seconds; within
-    that window every caller gets the cached frame. The capture lock is
-    acquired NON-blocking, so if a real capture is in progress the preview
-    yields immediately and serves the last cached frame instead of waiting.
-    """
+
+def _refresh_preview_once() -> None:
+    """Pull one liveview frame into the cache, yielding to any capture so the
+    shutter is never delayed."""
     global _preview_ts, _preview_data
-    now = time.monotonic()
-    with _preview_lock:
-        cached = _preview_data
-        fresh = cached is not None and (now - _preview_ts) < PREVIEW_TTL
-    if fresh:
-        return cached
-
-    # Time for a new pull, but never delay a capture for it.
     if not _camera_lock.acquire(blocking=False):
-        return cached
+        return  # a capture is in progress; skip this round
     try:
         data = _pull_preview_frame()
     except Exception:
         data = None
     finally:
         _camera_lock.release()
-
     if data is not None:
         data = _rotate_bytes(data)
         with _preview_lock:
             _preview_ts = time.monotonic()
             _preview_data = data
-        return data
-    return cached
+
+
+def _preview_worker() -> None:
+    while True:
+        _refresh_preview_once()
+        time.sleep(PREVIEW_TTL)
+
+
+def start_preview() -> None:
+    """Start refreshing the preview cache in the background, so /preview.jpg is
+    served instantly and a slow camera pull never blocks a web request."""
+    global _worker_started
+    with _worker_lock:
+        if _worker_started:
+            return
+        _worker_started = True
+    threading.Thread(target=_preview_worker, daemon=True).start()
+
+
+def preview() -> Optional[bytes]:
+    """Return the most recent cached liveview frame instantly (or None)."""
+    with _preview_lock:
+        return _preview_data

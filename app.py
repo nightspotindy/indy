@@ -52,7 +52,7 @@ import bank  # noqa: E402  (after the env file is loaded)
 import camera  # noqa: E402
 import notify  # noqa: E402
 
-VERSION = "v17"
+VERSION = "v18"
 
 # Night window (local time). Night spans NIGHT_START..midnight..NIGHT_END.
 NIGHT_START = int(os.environ.get("NIGHT_START", "20"))
@@ -144,6 +144,7 @@ def _startup() -> None:
     os.makedirs(CAPTURE_DIR, exist_ok=True)
     os.makedirs(VOICE_DIR, exist_ok=True)
     bank.init()
+    camera.start_preview()  # refresh liveview in the background, off the request path
 
 
 # --- helpers ----------------------------------------------------------------
@@ -366,12 +367,14 @@ async def api_deposit(
         mem_id = bank.add_memory(s["id"], category, "text", text, photo=photo)
         bank.update_session(s["id"], deposit_id=mem_id, state="deposited")
         kind, summary = "text", (text or "(empty)")
+    photo_path = os.path.join(CAPTURE_DIR, photo) if photo else None
     notify.send(
         "nightspot — a {} was left".format(category),
         "Someone just left a {} ({}){}.\n\n{}\n\n{}\nSee everything in the "
         "admin dashboard.".format(
-            category, kind, ", with a photo" if photo else "", summary,
+            category, kind, ", photo attached" if photo else "", summary,
             _now_str()),
+        attach_path=photo_path,
     )
     return RedirectResponse("/gift", status_code=303)
 

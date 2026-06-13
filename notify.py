@@ -38,13 +38,36 @@ def configured() -> bool:
     return bool(SMTP_HOST and NOTIFY_TO and SMTP_USER)
 
 
-def _deliver(subject: str, body: str) -> None:
+def _shrink_jpeg(data: bytes, max_side: int = 1600) -> bytes:
+    """Downscale a JPEG so emailed photos stay small (full-res stays in the
+    app for download). Returns the original bytes if anything goes wrong."""
+    try:
+        import io
+        from PIL import Image
+        img = Image.open(io.BytesIO(data))
+        img.thumbnail((max_side, max_side))
+        out = io.BytesIO()
+        img.convert("RGB").save(out, "JPEG", quality=85)
+        return out.getvalue()
+    except Exception:
+        return data
+
+
+def _deliver(subject: str, body: str, attach_path=None) -> None:
     try:
         msg = EmailMessage()
         msg["Subject"] = subject
         msg["From"] = NOTIFY_FROM or SMTP_USER
         msg["To"] = NOTIFY_TO
         msg.set_content(body)
+        if attach_path:
+            try:
+                with open(attach_path, "rb") as f:
+                    img = _shrink_jpeg(f.read())
+                msg.add_attachment(img, maintype="image", subtype="jpeg",
+                                   filename="nightspot.jpg")
+            except Exception as e:
+                log.warning("notify attach failed: %s", e)
         if SMTP_PORT == 465:
             ctx = ssl.create_default_context()
             with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ctx,
@@ -61,10 +84,11 @@ def _deliver(subject: str, body: str) -> None:
         log.warning("notify failed (%s): %s", subject, e)
 
 
-def send(subject: str, body: str) -> None:
-    """Queue an email. Returns immediately; no-op (logged) if unconfigured."""
+def send(subject: str, body: str, attach_path=None) -> None:
+    """Queue an email (optionally with a JPEG attachment). Returns immediately;
+    no-op (logged) if unconfigured."""
     if not configured():
         log.info("notify skipped (SMTP not configured): %s", subject)
         return
-    threading.Thread(target=_deliver, args=(subject, body),
+    threading.Thread(target=_deliver, args=(subject, body, attach_path),
                      daemon=True).start()
