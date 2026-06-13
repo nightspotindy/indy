@@ -10,6 +10,7 @@ The flow is a state machine stored in SQLite and keyed to a session cookie
 (1 hour TTL). No skipping ahead, no going back, no replays: any out-of-order
 request is redirected to wherever the session actually is.
 """
+import logging
 import os
 import time
 import uuid
@@ -51,7 +52,7 @@ import bank  # noqa: E402  (after the env file is loaded)
 import camera  # noqa: E402
 import notify  # noqa: E402
 
-VERSION = "v14"
+VERSION = "v15"
 
 # Night window (local time). Night spans NIGHT_START..midnight..NIGHT_END.
 NIGHT_START = int(os.environ.get("NIGHT_START", "20"))
@@ -118,6 +119,16 @@ templates = Jinja2Templates(directory="templates")
 
 @app.on_event("startup")
 def _startup() -> None:
+    # Surface nightspot's own logs (notably email-alert success/failure) on
+    # stderr so they show up in uvicorn output / journalctl on the Pi.
+    nlog = logging.getLogger("nightspot")
+    if not nlog.handlers:
+        h = logging.StreamHandler()
+        h.setFormatter(logging.Formatter(
+            "%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        nlog.addHandler(h)
+    nlog.setLevel(logging.INFO)
+    nlog.propagate = False
     os.makedirs(CAPTURE_DIR, exist_ok=True)
     os.makedirs(VOICE_DIR, exist_ok=True)
     bank.init()
