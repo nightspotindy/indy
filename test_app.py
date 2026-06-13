@@ -21,6 +21,7 @@ os.environ.setdefault("MAX_TAKES", "3")
 
 import bank  # noqa: E402
 import camera  # noqa: E402
+import notify  # noqa: E402
 import app as appmod  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -346,6 +347,35 @@ def test_ask_terminal_sets_done_and_offers_restart():
         assert r.headers["location"] == "/capture"  # restarts, not trapped
     finally:
         appmod.is_night = orig
+
+
+def test_notify_is_noop_when_unconfigured():
+    # No SMTP env in the test environment, so notifications must be a safe,
+    # non-raising no-op (the flow can never break on mail trouble).
+    assert notify.configured() is False
+    notify.send("subject", "body")  # must not raise or hit the network
+
+
+def test_events_fire_notifications():
+    # A deposit, a question, and a signup each push an email.
+    sent = []
+    orig = notify.send
+    notify.send = lambda subject, body: sent.append((subject, body))
+    try:
+        c = client()
+        deposit_text(c, "fear", "dog")
+        c.get("/gift")
+        c.post("/carry", follow_redirects=False)
+        c.post("/api/ask", data={"body": "who fixes the light?"},
+               follow_redirects=False)
+        c.post("/api/subscribe", data={"name": "Dana", "phone": "555-1"},
+               follow_redirects=False)
+    finally:
+        notify.send = orig
+    subjects = " ".join(s for s, _ in sent).lower()
+    assert "a fear was left" in subjects
+    assert "question for the window" in subjects
+    assert "new signup" in subjects
 
 
 def test_subscribe_records_name_phone_and_assignment():

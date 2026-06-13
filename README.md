@@ -42,6 +42,35 @@ MOCK_CAMERA=1 python3 test_app.py
 | `PREVIEW_TTL`  | `2`     | Seconds between real liveview pulls (server-side). |
 | `TIP_URL`      | empty   | Shelved tip door; restore path is in `/exit`.      |
 | `ADMIN_KEY`    | `nightspot` | Key for the `/admin` dashboard. **Change this.** |
+| `SMTP_HOST`    | empty   | Mail server; set (with the rest) to enable email alerts. |
+| `SMTP_PORT`    | `587`   | `587` STARTTLS, or `465` SSL.                      |
+| `SMTP_USER`    | empty   | SMTP login / sending address.                      |
+| `SMTP_PASS`    | empty   | SMTP password or app-password.                     |
+| `NOTIFY_FROM`  | `SMTP_USER` | From address on the alert emails.              |
+| `NOTIFY_TO`    | empty   | Where alerts go (e.g. evan@just-in-time.co).       |
+
+## Email alerts (someone used the service)
+
+When SMTP is configured, the app emails `NOTIFY_TO` on every real event:
+
+- a **deposit** (a recommendation / memory / fear was left),
+- a **question** for the window,
+- a new **signup**.
+
+Sends happen on a background thread and swallow all errors, so a slow or
+broken mail server can never delay or break a visitor's flow. With SMTP
+**unconfigured it's a silent no-op** — dev runs and the test suite never touch
+the network.
+
+Gmail example (use an App Password, not your account password):
+
+```ini
+Environment=SMTP_HOST=smtp.gmail.com
+Environment=SMTP_PORT=587
+Environment=SMTP_USER=you@gmail.com
+Environment=SMTP_PASS=your-16-char-app-password
+Environment=NOTIFY_TO=evan@just-in-time.co
+```
 
 ## Admin dashboard
 

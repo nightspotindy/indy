@@ -28,8 +28,9 @@ from fastapi.templating import Jinja2Templates
 
 import bank
 import camera
+import notify
 
-VERSION = "v12"
+VERSION = "v13"
 
 # Night window (local time). Night spans NIGHT_START..midnight..NIGHT_END.
 NIGHT_START = int(os.environ.get("NIGHT_START", "20"))
@@ -132,6 +133,10 @@ def ctx(request: Request, **kw) -> dict:
     base = {"request": request, "version": VERSION, "is_night": is_night()}
     base.update(kw)
     return base
+
+
+def _now_str() -> str:
+    return time.strftime("%Y-%m-%d %H:%M", time.localtime())
 
 
 def latest_take_path(session_id: str, takes: int) -> Optional[str]:
@@ -311,10 +316,19 @@ async def api_deposit(
         # Store the filename as the body so it can be served back later.
         _set_voice_body(mem_id, fname)
         bank.update_session(s["id"], deposit_id=mem_id, state="deposited")
+        kind, summary = "voice", "(voice recording)"
     else:
         text = (body or "").strip()[:2000]
         mem_id = bank.add_memory(s["id"], category, "text", text, photo=photo)
         bank.update_session(s["id"], deposit_id=mem_id, state="deposited")
+        kind, summary = "text", (text or "(empty)")
+    notify.send(
+        "nightspot — a {} was left".format(category),
+        "Someone just left a {} ({}){}.\n\n{}\n\n{}\nSee everything in the "
+        "admin dashboard.".format(
+            category, kind, ", with a photo" if photo else "", summary,
+            _now_str()),
+    )
     return RedirectResponse("/gift", status_code=303)
 
 
@@ -410,6 +424,12 @@ def api_subscribe(request: Request, name: str = Form(""),
     if gift_id is not None:
         bank.mark_given(gift_id)
     bank.add_subscriber(name, phone, gift_id, category)
+    notify.send(
+        "nightspot — new signup",
+        "Name:  {}\nPhone: {}\nSet aside: a {} (#{})\n\n{}\nSee everything in "
+        "the admin dashboard.".format(name, phone, category, gift_id,
+                                      _now_str()),
+    )
     # TODO(sms): this is where the daily feed would queue/send an MMS via a
     # provider (Twilio etc.) — name/phone/gift_id are all recorded for it.
     return RedirectResponse("/subscribe?ok={}".format(category),
@@ -506,8 +526,12 @@ def api_ask(request: Request, body: str = Form("")):
     if s["state"] not in ("gifted", "done"):
         return redirect_to_state(s["state"])
     text = (body or "").strip()[:500]
-    if text:
-        bank.add_question(s["id"], text)  # UNIQUE enforces one per session
+    if text and bank.add_question(s["id"], text):  # UNIQUE: one per session
+        notify.send(
+            "nightspot — a question for the window",
+            "{}\n\n{}\nSee everything in the admin dashboard.".format(
+                text, _now_str()),
+        )
     return RedirectResponse("/ask", status_code=303)
 
 
