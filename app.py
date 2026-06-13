@@ -26,11 +26,32 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-import bank
-import camera
-import notify
+def _load_env_file(path: str) -> None:
+    """Load KEY=VALUE lines from a local env file (gitignored secrets like
+    SMTP_PASS) into the environment if it exists. Real env vars already set
+    (e.g. systemd Environment=) take precedence. Runs before importing modules
+    that read their config at import time."""
+    try:
+        with open(path) as f:
+            for raw in f:
+                line = raw.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(),
+                                      v.strip().strip('"').strip("'"))
+    except FileNotFoundError:
+        pass
 
-VERSION = "v13"
+
+_load_env_file(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "nightspot.env"))
+
+import bank  # noqa: E402  (after the env file is loaded)
+import camera  # noqa: E402
+import notify  # noqa: E402
+
+VERSION = "v14"
 
 # Night window (local time). Night spans NIGHT_START..midnight..NIGHT_END.
 NIGHT_START = int(os.environ.get("NIGHT_START", "20"))

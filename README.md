@@ -62,14 +62,31 @@ broken mail server can never delay or break a visitor's flow. With SMTP
 **unconfigured it's a silent no-op** — dev runs and the test suite never touch
 the network.
 
-Gmail example (use an App Password, not your account password):
+**Easiest setup — a drop-in config file.** Copy `nightspot.env.example` to
+`nightspot.env` (gitignored, so secrets never get committed) and fill it in;
+it's loaded automatically on startup. Real env vars / systemd `Environment=`
+lines still take precedence.
+
+```bash
+cp nightspot.env.example nightspot.env   # then edit it and paste the App Password
+```
+
+Verify it actually sends (after filling in the password):
+
+```bash
+.venv/bin/python -c "import logging; logging.basicConfig(level=logging.INFO); import app, notify; notify._deliver('nightspot test', 'it works')"
+```
+
+For Gmail use a 16-character **App Password**, not your account password
+(Google Account → Security → 2-Step Verification → App passwords). Or, in a
+systemd unit:
 
 ```ini
 Environment=SMTP_HOST=smtp.gmail.com
 Environment=SMTP_PORT=587
-Environment=SMTP_USER=you@gmail.com
+Environment=SMTP_USER=nightspot.indy@gmail.com
 Environment=SMTP_PASS=your-16-char-app-password
-Environment=NOTIFY_TO=evan@just-in-time.co
+Environment=NOTIFY_TO=nightspot.indy@gmail.com
 ```
 
 ## Admin dashboard

@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+# Local secrets (SMTP password, admin key). Never commit these.
+nightspot.env
+*.env

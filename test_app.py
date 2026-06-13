@@ -23,6 +23,12 @@ import bank  # noqa: E402
 import camera  # noqa: E402
 import notify  # noqa: E402
 import app as appmod  # noqa: E402
+
+# The test suite must never send real email, no matter what a local
+# nightspot.env contains. Force the notifier into its unconfigured state.
+notify.SMTP_HOST = ""
+notify.NOTIFY_TO = ""
+notify.SMTP_USER = ""
 from fastapi.testclient import TestClient  # noqa: E402
 
 # Redirect every filesystem + DB path into a throwaway temp dir.
