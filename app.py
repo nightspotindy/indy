@@ -52,7 +52,7 @@ import bank  # noqa: E402  (after the env file is loaded)
 import camera  # noqa: E402
 import notify  # noqa: E402
 
-VERSION = "v15"
+VERSION = "v16"
 
 # Night window (local time). Night spans NIGHT_START..midnight..NIGHT_END.
 NIGHT_START = int(os.environ.get("NIGHT_START", "20"))
@@ -112,9 +112,21 @@ STATE_URL = {
     "done": "/getout",
 }
 
+class _Templates(Jinja2Templates):
+    """Render via the modern (request, name, context) argument order so the
+    app works on both older Starlette (dev Mac, which accepts either order)
+    and newer Starlette (the Pi runs 1.3.x, which removed the legacy
+    (name, context) form). All call sites still pass (name, context)."""
+
+    def TemplateResponse(self, name, context=None, *args, **kwargs):
+        context = context or {}
+        request = context.get("request")
+        return super().TemplateResponse(request, name, context, *args, **kwargs)
+
+
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
+templates = _Templates(directory="templates")
 
 
 @app.on_event("startup")
