@@ -44,6 +44,16 @@ CAMERA_ROTATE = int(os.environ.get("CAMERA_ROTATE", "0"))
 # the preview light so once-a-second polling doesn't choke a mobile browser.
 PREVIEW_MAX = int(os.environ.get("PREVIEW_MAX", "800"))
 
+# HDMI capture card (e.g. an Elgato Cam Link) for smooth, video-rate preview.
+# Set CAM_DEVICE to its V4L2 node (e.g. /dev/video0) to read the live preview
+# from the card via ffmpeg at 30 fps instead of slow gphoto2 liveview. Captures
+# still come from the camera over USB at full resolution. Empty = gphoto2/mock.
+CAM_DEVICE = os.environ.get("CAM_DEVICE", "")
+CAM_FORMAT = os.environ.get("CAM_FORMAT", "mjpeg")
+CAM_SIZE = os.environ.get("CAM_SIZE", "1280x720")
+CAM_FPS = os.environ.get("CAM_FPS", "30")
+CAM_QUALITY = os.environ.get("CAM_QUALITY", "7")  # ffmpeg mjpeg -q:v (2=best)
+
 CAPTURE_DIR = os.path.join("data", "captures")
 
 # One body, one shutter: every real camera command is serialized.
@@ -256,6 +266,66 @@ def _preview_worker() -> None:
         time.sleep(0.03 if fast else PREVIEW_TTL)
 
 
+def _ffmpeg_vf() -> str:
+    """Build the ffmpeg video filter: rotate (CAMERA_ROTATE) then downscale."""
+    parts = []
+    r = CAMERA_ROTATE % 360
+    if r == 90:
+        parts.append("transpose=1")          # 90 clockwise
+    elif r == 180:
+        parts.append("transpose=2,transpose=2")
+    elif r == 270:
+        parts.append("transpose=2")          # 90 counter-clockwise
+    parts.append("scale={m}:{m}:force_original_aspect_ratio=decrease".format(
+        m=PREVIEW_MAX))
+    return ",".join(parts)
+
+
+def _v4l2_worker() -> None:
+    """Read the HDMI capture card (CAM_DEVICE) via ffmpeg at video rate, caching
+    each rotated+downscaled JPEG frame. Smooth preview without touching the USB
+    camera (which stays free for full-res captures)."""
+    global _preview_data, _preview_ts
+    while True:
+        proc = None
+        try:
+            proc = subprocess.Popen(
+                ["ffmpeg", "-loglevel", "error", "-nostdin",
+                 "-f", "v4l2", "-input_format", CAM_FORMAT,
+                 "-video_size", CAM_SIZE, "-framerate", CAM_FPS,
+                 "-i", CAM_DEVICE,
+                 "-vf", _ffmpeg_vf(), "-f", "mjpeg", "-q:v", CAM_QUALITY, "-"],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            buf = b""
+            while True:
+                chunk = proc.stdout.read(65536)
+                if not chunk:
+                    break
+                buf += chunk
+                while True:
+                    soi = buf.find(b"\xff\xd8")
+                    if soi == -1:
+                        break
+                    eoi = buf.find(b"\xff\xd9", soi + 2)
+                    if eoi == -1:
+                        if soi > 0:
+                            buf = buf[soi:]  # drop junk before a frame start
+                        break
+                    with _preview_lock:
+                        _preview_data = buf[soi:eoi + 2]
+                        _preview_ts = time.monotonic()
+                    buf = buf[eoi + 2:]
+        except Exception:
+            pass
+        finally:
+            if proc is not None:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+        time.sleep(1.0)  # ffmpeg exited (e.g. no signal) — retry
+
+
 def start_preview() -> None:
     """Start refreshing the preview cache in the background, so /preview.jpg is
     served instantly and a slow camera pull never blocks a web request."""
@@ -264,7 +334,10 @@ def start_preview() -> None:
         if _worker_started:
             return
         _worker_started = True
-    threading.Thread(target=_preview_worker, daemon=True).start()
+    # Prefer the HDMI capture card (smooth) when CAM_DEVICE is set; otherwise
+    # fall back to gphoto2/mock liveview.
+    target = _v4l2_worker if (CAM_DEVICE and not MOCK) else _preview_worker
+    threading.Thread(target=target, daemon=True).start()
 
 
 def preview() -> Optional[bytes]:

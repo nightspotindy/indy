@@ -54,7 +54,7 @@ import bank  # noqa: E402  (after the env file is loaded)
 import camera  # noqa: E402
 import notify  # noqa: E402
 
-VERSION = "v21"
+VERSION = "v22"
 
 # Night window (local time). Night spans NIGHT_START..midnight..NIGHT_END.
 NIGHT_START = int(os.environ.get("NIGHT_START", "20"))
