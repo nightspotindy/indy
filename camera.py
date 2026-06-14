@@ -53,6 +53,9 @@ CAM_FORMAT = os.environ.get("CAM_FORMAT", "mjpeg")
 CAM_SIZE = os.environ.get("CAM_SIZE", "1280x720")
 CAM_FPS = os.environ.get("CAM_FPS", "30")
 CAM_QUALITY = os.environ.get("CAM_QUALITY", "7")  # ffmpeg mjpeg -q:v (2=best)
+# The photo grabbed from the card at shutter time — full resolution of the
+# HDMI feed (set the camera's HDMI Resolution to 1080p for this).
+CAM_CAPTURE_SIZE = os.environ.get("CAM_CAPTURE_SIZE", "1920x1080")
 
 CAPTURE_DIR = os.path.join("data", "captures")
 
@@ -178,6 +181,11 @@ def capture(session_id: str, take: int) -> str:
                 f.write(data)
             _rotate_file(path)
             return path
+        if CAM_DEVICE:
+            # HDMI-capture rig: grab a full-res still from the capture card
+            # (the camera isn't under USB control here).
+            _capture_from_card(path)
+            return path
         if HAVE_GP:
             # Shoot via the held handle. The image stays on the card (the
             # camera's PC+Camera save dest) — same effect as gphoto2 --keep.
@@ -235,6 +243,11 @@ def _pull_preview_frame() -> Optional[bytes]:
 _worker_lock = threading.Lock()
 _worker_started = False
 
+# Hand the V4L2 device from the preview worker to a capture, briefly. The
+# worker releases /dev/video0 while _pause is set (V4L2 allows one reader).
+_pause = threading.Event()
+_paused = threading.Event()
+
 
 def _refresh_preview_once() -> None:
     """Pull one liveview frame into the cache, yielding to any capture so the
@@ -266,27 +279,34 @@ def _preview_worker() -> None:
         time.sleep(0.03 if fast else PREVIEW_TTL)
 
 
-def _ffmpeg_vf() -> str:
-    """Build the ffmpeg video filter: rotate (CAMERA_ROTATE) then downscale."""
-    parts = []
+def _rotate_vf() -> str:
+    """ffmpeg transpose chain for CAMERA_ROTATE degrees clockwise ('' = none)."""
     r = CAMERA_ROTATE % 360
     if r == 90:
-        parts.append("transpose=1")          # 90 clockwise
-    elif r == 180:
-        parts.append("transpose=2,transpose=2")
-    elif r == 270:
-        parts.append("transpose=2")          # 90 counter-clockwise
-    parts.append("scale={m}:{m}:force_original_aspect_ratio=decrease".format(
-        m=PREVIEW_MAX))
-    return ",".join(parts)
+        return "transpose=1"               # 90 clockwise
+    if r == 180:
+        return "transpose=2,transpose=2"
+    if r == 270:
+        return "transpose=2"               # 90 counter-clockwise
+    return ""
 
 
 def _v4l2_worker() -> None:
     """Read the HDMI capture card (CAM_DEVICE) via ffmpeg at video rate, caching
-    each rotated+downscaled JPEG frame. Smooth preview without touching the USB
-    camera (which stays free for full-res captures)."""
+    each rotated+downscaled JPEG frame. Yields the device while _pause is set so
+    a capture can grab a full-res still."""
     global _preview_data, _preview_ts
+    vf = _rotate_vf()
+    scale = "scale={m}:{m}:force_original_aspect_ratio=decrease".format(
+        m=PREVIEW_MAX)
+    vf = (vf + "," + scale) if vf else scale
     while True:
+        if _pause.is_set():
+            _paused.set()
+            while _pause.is_set():
+                time.sleep(0.03)
+            _paused.clear()
+            continue
         proc = None
         try:
             proc = subprocess.Popen(
@@ -294,10 +314,10 @@ def _v4l2_worker() -> None:
                  "-f", "v4l2", "-input_format", CAM_FORMAT,
                  "-video_size", CAM_SIZE, "-framerate", CAM_FPS,
                  "-i", CAM_DEVICE,
-                 "-vf", _ffmpeg_vf(), "-f", "mjpeg", "-q:v", CAM_QUALITY, "-"],
+                 "-vf", vf, "-f", "mjpeg", "-q:v", CAM_QUALITY, "-"],
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
             buf = b""
-            while True:
+            while not _pause.is_set():
                 chunk = proc.stdout.read(65536)
                 if not chunk:
                     break
@@ -321,9 +341,33 @@ def _v4l2_worker() -> None:
             if proc is not None:
                 try:
                     proc.kill()
+                    proc.wait(timeout=2)
                 except Exception:
                     pass
-        time.sleep(1.0)  # ffmpeg exited (e.g. no signal) — retry
+        if not _pause.is_set():
+            time.sleep(1.0)  # ffmpeg exited (e.g. no signal) — retry
+
+
+def _capture_from_card(path: str) -> None:
+    """Grab one full-resolution still from the capture card, pausing the preview
+    worker so it can briefly own the V4L2 device."""
+    _pause.set()
+    try:
+        _paused.wait(timeout=5)  # let the worker release /dev/video0
+        cmd = ["ffmpeg", "-loglevel", "error", "-nostdin", "-y",
+               "-f", "v4l2", "-input_format", CAM_FORMAT,
+               "-video_size", CAM_CAPTURE_SIZE, "-framerate", CAM_FPS,
+               "-i", CAM_DEVICE]
+        vf = _rotate_vf()
+        if vf:
+            cmd += ["-vf", vf]
+        cmd += ["-frames:v", "1", "-update", "1", "-q:v", "2", path]
+        subprocess.run(cmd, timeout=CAPTURE_TIMEOUT, check=True,
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    finally:
+        _pause.clear()
+    if not os.path.exists(path):
+        raise RuntimeError("HDMI capture produced no file")
 
 
 def start_preview() -> None:
